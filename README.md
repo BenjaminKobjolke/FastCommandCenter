@@ -3,7 +3,9 @@
 A background Windows app with no main window. Press a global keyboard shortcut
 from anywhere and a command palette opens; run a command; the palette closes.
 v1 lets you configure that global shortcut. Reachable via a system tray icon
-or via the palette's own "Settings"/"Quit" entries.
+or via the palette's own "Settings"/"Quit" entries. Settings and Appearance
+both drill into the same palette window instead of popping up separate
+dialogs — Esc backs out one step at a time, same as the rest of the palette.
 
 ## Install / Setup
 

@@ -1,19 +1,30 @@
 """The palette's command list.
 
 Appearance is tuned from *here* — the palette itself — not the Settings
-dialog; each Appearance command persists its choice and calls
-``apply_appearance`` so the change is live on the very next open. Every
-command below (including ``open_palette``, the opener itself) is a bindable
-global OS hotkey target — see ``palette/commands.py``'s ``settings`` command,
-which opens the shared library's shortcut editor, and ``core/hotkey_manager.py``.
+dialog; each Appearance command is navigable (drills into a submenu of
+values in the same palette window, see ``CommandPalette.open``/
+``push_level`` in the ``command_palette`` library) and persists its choice
+via ``apply_appearance`` so the change is live immediately. Every command
+below (including ``open_palette``, the opener itself) is a bindable global
+OS hotkey target.
+
+``settings`` is likewise navigable: picking it *inside* an open palette
+drills into the full "Configure keyboard shortcuts" editor in the same
+window (``mount_shortcuts`` -> ``open_shortcut_editor_in_palette``), never
+opening a second window. It also keeps a plain ``run`` (``open_settings``)
+for the case where a user has bound a global OS hotkey directly to
+"settings" -- that path fires with no palette open yet, so it opens the
+palette navigated straight to the editor instead of calling ``on_navigate``
+against a dialog that doesn't exist.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import replace
+from typing import TYPE_CHECKING
 
-from command_palette import Command, PaletteConfig, pick_option
+from command_palette import Command, ListEntry, PaletteConfig
 from command_palette.appearance import (
     HEIGHT_PCT_MAX,
     HEIGHT_PCT_MIN,
@@ -27,18 +38,22 @@ from PySide6.QtWidgets import QColorDialog
 
 from config.settings_store import SettingsStore
 
+if TYPE_CHECKING:
+    from command_palette.dialog import FilterListDialog
+
 _FONT_SIZES = [0, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40]
 _PERCENT_STEP = 10
-_PICKER_PLACEHOLDER = "Type to filter…"
 _RESET_TO_DEFAULT = "__reset__"
 _CHOOSE_CUSTOM = "__custom__"
 
 ApplyAppearance = Callable[[PaletteConfig], None]
+_NO_RUN: Callable[[], None] = lambda: None  # noqa: E731 — navigable commands never run() directly
 
 
 def build_commands(
     open_palette: Callable[[], None],
     open_settings: Callable[[], None],
+    mount_shortcuts: Callable[[FilterListDialog], None],
     quit_app: Callable[[], None],
     settings_store: SettingsStore,
     apply_appearance: ApplyAppearance,
@@ -53,105 +68,113 @@ def build_commands(
             command_id="settings",
             title="Configure keyboard shortcuts",
             run=open_settings,
+            on_navigate=mount_shortcuts,
         ),
         Command(
             command_id="appearance_font",
             title="Appearance: font size",
-            run=lambda: _pick_font_size(settings_store, apply_appearance),
+            run=_NO_RUN,
+            submenu=_font_size_entries,
+            on_submenu_choice=lambda value: apply_appearance(
+                replace(settings_store.get_appearance(), font_pt=value)
+            ),
         ),
         Command(
             command_id="appearance_width",
             title="Appearance: window width",
-            run=lambda: _pick_width(settings_store, apply_appearance),
+            run=_NO_RUN,
+            submenu=lambda: _percent_entries(WIDTH_PCT_MIN, WIDTH_PCT_MAX),
+            on_submenu_choice=lambda value: apply_appearance(
+                replace(settings_store.get_appearance(), width_pct=value)
+            ),
         ),
         Command(
             command_id="appearance_height",
             title="Appearance: window height",
-            run=lambda: _pick_height(settings_store, apply_appearance),
+            run=_NO_RUN,
+            submenu=lambda: _percent_entries(HEIGHT_PCT_MIN, HEIGHT_PCT_MAX),
+            on_submenu_choice=lambda value: apply_appearance(
+                replace(settings_store.get_appearance(), height_pct=value)
+            ),
         ),
         Command(
             command_id="appearance_opacity",
             title="Appearance: opacity",
-            run=lambda: _pick_opacity(settings_store, apply_appearance),
+            run=_NO_RUN,
+            submenu=lambda: _percent_entries(OPACITY_PCT_MIN, OPACITY_PCT_MAX),
+            on_submenu_choice=lambda value: apply_appearance(
+                replace(settings_store.get_appearance(), opacity_pct=value)
+            ),
         ),
         Command(
             command_id="appearance_active_fg",
             title="Appearance: selected row color",
-            run=lambda: _pick_active_color(settings_store, apply_appearance),
+            run=_NO_RUN,
+            submenu=_color_choice_entries,
+            on_submenu_choice=lambda choice: _apply_active_color_choice(
+                choice, settings_store, apply_appearance
+            ),
         ),
         Command(
             command_id="appearance_inactive_fg",
             title="Appearance: other rows color",
-            run=lambda: _pick_inactive_color(settings_store, apply_appearance),
+            run=_NO_RUN,
+            submenu=_color_choice_entries,
+            on_submenu_choice=lambda choice: _apply_inactive_color_choice(
+                choice, settings_store, apply_appearance
+            ),
         ),
         Command(command_id="quit", title="Quit FastCommandCenter", run=quit_app),
     ]
 
 
-def _pick_font_size(settings_store: SettingsStore, apply_appearance: ApplyAppearance) -> None:
-    labels = {size: ("Default (theme size)" if size == 0 else f"{size} pt") for size in _FONT_SIZES}
-    chosen = pick_option(None, labels, title="Font size", placeholder=_PICKER_PLACEHOLDER)
-    if chosen is not None:
-        apply_appearance(replace(settings_store.get_appearance(), font_pt=chosen))
+def _font_size_entries() -> list[ListEntry]:
+    return [
+        ListEntry(title=("Default (theme size)" if size == 0 else f"{size} pt"), payload=size)
+        for size in _FONT_SIZES
+    ]
 
 
-def _pick_width(settings_store: SettingsStore, apply_appearance: ApplyAppearance) -> None:
-    chosen = _pick_percent("Window width (% of screen)", WIDTH_PCT_MIN, WIDTH_PCT_MAX)
-    if chosen is not None:
-        apply_appearance(replace(settings_store.get_appearance(), width_pct=chosen))
-
-
-def _pick_height(settings_store: SettingsStore, apply_appearance: ApplyAppearance) -> None:
-    chosen = _pick_percent("Window height (% of screen)", HEIGHT_PCT_MIN, HEIGHT_PCT_MAX)
-    if chosen is not None:
-        apply_appearance(replace(settings_store.get_appearance(), height_pct=chosen))
-
-
-def _pick_opacity(settings_store: SettingsStore, apply_appearance: ApplyAppearance) -> None:
-    chosen = _pick_percent("Opacity", OPACITY_PCT_MIN, OPACITY_PCT_MAX)
-    if chosen is not None:
-        apply_appearance(replace(settings_store.get_appearance(), opacity_pct=chosen))
-
-
-def _pick_active_color(settings_store: SettingsStore, apply_appearance: ApplyAppearance) -> None:
-    config = settings_store.get_appearance()
-    changed, color = _pick_color(config.active_fg, title="Selected row color")
-    if changed:
-        apply_appearance(replace(config, active_fg=color))
-
-
-def _pick_inactive_color(settings_store: SettingsStore, apply_appearance: ApplyAppearance) -> None:
-    config = settings_store.get_appearance()
-    changed, color = _pick_color(config.inactive_fg, title="Other rows color")
-    if changed:
-        apply_appearance(replace(config, inactive_fg=color))
-
-
-def _pick_percent(title: str, minimum: int, maximum: int) -> int | None:
+def _percent_entries(minimum: int, maximum: int) -> list[ListEntry]:
     # ponytail: assumes [minimum, maximum] is step-aligned (true for all three
     # current bounds, 20-100); a future non-aligned bound would just drop the
     # top value from the list, not crash.
-    options = {v: f"{v}%" for v in range(minimum, maximum + 1, _PERCENT_STEP)}
-    return pick_option(None, options, title=title, placeholder=_PICKER_PLACEHOLDER)
+    return [ListEntry(title=f"{v}%", payload=v) for v in range(minimum, maximum + 1, _PERCENT_STEP)]
 
 
-def _pick_color(initial: str | None, *, title: str) -> tuple[bool, str | None]:
-    """Prompt to choose a custom color or reset to the theme default.
+def _color_choice_entries() -> list[ListEntry]:
+    return [
+        ListEntry(title="Choose custom color…", payload=_CHOOSE_CUSTOM),
+        ListEntry(title="Reset to theme default", payload=_RESET_TO_DEFAULT),
+    ]
 
-    Returns ``(changed, color)``; ``color`` is ``None`` for "reset to
-    default". ``changed`` is ``False`` if the user backed out at any step.
-    """
-    choice = pick_option(
-        None,
-        {_CHOOSE_CUSTOM: "Choose custom color…", _RESET_TO_DEFAULT: "Reset to theme default"},
-        title=title,
-        placeholder=_PICKER_PLACEHOLDER,
-    )
-    if choice is None:
-        return False, None
+
+def _apply_active_color_choice(
+    choice: str, settings_store: SettingsStore, apply_appearance: ApplyAppearance
+) -> None:
+    config = settings_store.get_appearance()
     if choice == _RESET_TO_DEFAULT:
-        return True, None
+        apply_appearance(replace(config, active_fg=None))
+        return
+    picked = _pick_native_color(config.active_fg, title="Selected row color")
+    if picked is not None:
+        apply_appearance(replace(config, active_fg=picked))
+
+
+def _apply_inactive_color_choice(
+    choice: str, settings_store: SettingsStore, apply_appearance: ApplyAppearance
+) -> None:
+    config = settings_store.get_appearance()
+    if choice == _RESET_TO_DEFAULT:
+        apply_appearance(replace(config, inactive_fg=None))
+        return
+    picked = _pick_native_color(config.inactive_fg, title="Other rows color")
+    if picked is not None:
+        apply_appearance(replace(config, inactive_fg=picked))
+
+
+def _pick_native_color(initial: str | None, *, title: str) -> str | None:
+    """Open the native color wheel (the one unavoidable exception to staying
+    inside the palette — a color wheel can't be a filter-list)."""
     picked = QColorDialog.getColor(QColor(initial or "#ffffff"), None, title)
-    if not picked.isValid():
-        return False, None
-    return True, picked.name()
+    return picked.name() if picked.isValid() else None

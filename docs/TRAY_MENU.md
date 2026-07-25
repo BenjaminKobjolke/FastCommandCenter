@@ -14,8 +14,9 @@ lives in `gui/tray.py`, wired up once from `fastcommandcenter.py:main()`.
   to hold `menu_ref: QMenu | None` — see "Lifetime" below.
 - **Context menu** (`QMenu`) — four entries, in order:
   1. `Open palette` → `open_palette` (same callback the global hotkey triggers)
-  2. `Configure keyboard shortcuts` → `open_shortcuts_config` (opens the shared
-     `python-command-palette` shortcut editor, modal)
+  2. `Configure keyboard shortcuts` → `open_shortcuts_config` (opens the
+     palette navigated straight into the shared `python-command-palette`
+     shortcut editor — drilled into the same window, not a separate dialog)
   3. *(separator)*
   4. `Quit` → `app.quit`
 

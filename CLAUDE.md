@@ -4,6 +4,30 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Coding rules source: `D:\GIT\BenjaminKobjolke\claude-code\coding-rules`
 
+## Dependency: `python-command-palette`
+
+This app is a thin host on top of the `python-command-palette` library — the
+palette dialog, appearance/QSS, navigation stack, shortcut editor, and
+persistence (`Store`/`KeymapState`) all live there, not here. Local checkout:
+`D:\GIT\BenjaminKobjolke\python-command-palette` (its own repo, own
+`CLAUDE.md`/`docs/` — `APPEARANCE.md`, `NAVIGATION.md`, `INTEGRATION.md`).
+
+When asked to change or fix something, decide which repo actually owns it
+before writing code, and say so:
+
+- **Library repo** — dialog rendering/QSS, appearance application, navigation
+  (push/pop levels), shortcut-editor mechanics, `Store`/`KeymapState`
+  internals — anything usable by another PySide6 host, not specific to
+  FastCommandCenter's commands or OS-hotkey wiring.
+- **This repo** — `palette/commands.py`'s command list, OS-global hotkey
+  wiring (`core/hotkey_manager.py`, `core/hotkey_bridge.py`), tray behavior,
+  this app's `SettingsStore`/appearance persistence shape, anything that calls
+  into the library's public API rather than living inside it.
+
+If it's ambiguous, ask before implementing rather than guessing — a fix placed
+in the wrong repo either duplicates library logic here or couples the library
+to FastCommandCenter-specific concerns.
+
 ## Commands
 
 ### Setup & Installation
@@ -43,29 +67,48 @@ system-wide global hotkey (OS-level, fires even when another app is focused)
 opens a PySide6 command palette; a system tray icon and the palette's own
 commands are the only other way to reach the app.
 
-### Design principle: the command palette is the primary settings UI
+### Design principle: the command palette is the primary settings UI, and never leaves its own window
 
 Every user-facing setting (appearance: font size, window width/height %,
 opacity, row colors, etc.) is configured **through the command palette
-itself** — one `Appearance: ...` command per setting in
-`palette/commands.py`, applied live via a callback into
-`CommandPalette.set_config()`. Do not add new appearance controls anywhere else.
+itself** — one `Appearance: ...` command per setting in `palette/commands.py`.
+Each is a *navigable* command (`Command.submenu` + `on_submenu_choice`, from
+`python-command-palette`): choosing it drills into a value list inside the
+same palette window (`FilterListDialog.push_level`) instead of popping a
+separate picker dialog. Picking a value persists it via
+`SettingsStore.set_appearance()` and applies it live via
+`CommandPalette.set_config()` + `restyle_open_dialog()` (so the change shows
+immediately, still inside the drilled-in list). Do not add new appearance
+controls anywhere else.
 
-Keyboard shortcuts are configured through the shared `python-command-palette`
-library's shortcut editor (`command_palette.open_shortcut_editor`), reachable
-from the tray menu ("Configure keyboard shortcuts") and the palette's own
-`settings` command — both call the same `open_shortcuts_config()` closure in
-`fastcommandcenter.py`. **Every** registered command (including `open_palette`,
-the opener itself) is a bindable target, and each can hold multiple chords —
-there is no more single "the" hotkey or emergency-only dialog; there is no
+Keyboard shortcuts work the same way, one level deeper: the `settings`
+command is navigable too (`Command.on_navigate`), and picking it inside an
+open palette mounts the *entire* "Configure keyboard shortcuts" editor —
+command list → inline "press a shortcut" capture → reassign/add-vs-replace/
+clear confirms — as pushed levels on that same dialog
+(`command_palette.open_shortcut_editor_in_palette`, wired by
+`fastcommandcenter.py`'s `mount_shortcuts`). None of it ever opens a second
+window. `settings` also keeps a plain `run` (`open_shortcuts_config`, also in
+`fastcommandcenter.py`): a global OS hotkey bound directly to `settings`
+fires with no palette open yet, so `run` opens the palette itself, navigated
+straight to the editor (`palette.open(navigate_to="settings")`) — `on_navigate`
+alone can't handle that path since it needs a live dialog to push into.
+**Every** registered command (including `open_palette`, the opener itself) is
+a bindable hotkey target, and each can hold multiple chords — there is no
+more single "the" hotkey or emergency-only dialog; there is no
 `gui/settings_dialog.py` anymore. See `docs/SETTINGS_STORAGE.md` for the
-persisted shape and the one-time migration off the old single-hotkey key.
+persisted shape and the one-time migration off the old single-hotkey key, and
+the library's `docs/NAVIGATION.md` for the underlying push/pop/capture API.
 
 ### Key Components
 
 - **`fastcommandcenter.py`**: entry point — builds `QApplication`, one shared
   `Store` for this app's settings and the palette library's `key_bindings`,
-  wires the hotkey manager, palette, and tray, runs `app.exec()`.
+  wires the hotkey manager, palette, and tray, runs `app.exec()`. Also builds
+  the closures the `settings` command uses: `mount_shortcuts(dialog)` (its
+  `on_navigate` — mounts the in-palette editor on the live dialog) and
+  `open_shortcuts_config()` (its `run`, and what the tray/fresh-install path
+  calls — opens the palette navigated straight to the editor).
 - **`core/hotkey_manager.py`**: owns every *live* OS-global hotkey
   registration over `winhotkeys.HotkeyManager` (the underlying multi-hotkey
   class, not the single-hotkey `HotkeyHandler` convenience). `apply(keymap,
@@ -91,10 +134,12 @@ persisted shape and the one-time migration off the old single-hotkey key.
 - **`gui/tray.py`**: `QSystemTrayIcon` with Open palette / Configure keyboard
   shortcuts / Quit.
 - **`palette/commands.py`**: `build_commands()` — the palette's command list:
-  `open_palette` (the opener, now an ordinary bindable command),
-  `settings` (opens the shortcut editor), one `Appearance: ...` command per
-  tunable (font size, width %, height %, opacity, selected/other row color —
-  each persists via `SettingsStore.set_appearance()` and applies live via
+  `open_palette` (the opener, now an ordinary bindable command), `settings`
+  (navigable — `on_navigate` mounts the in-palette shortcut editor; `run`
+  covers a direct global-hotkey binding, see above), one `Appearance: ...`
+  command per tunable (font size, width %, height %, opacity, selected/other
+  row color — each is navigable via `submenu`/`on_submenu_choice`, persists
+  via `SettingsStore.set_appearance()`, applies live via
   `CommandPalette.set_config()`), and `quit`.
 
 ### Important: the palette library's own shortcut mechanism is Qt-local; this app's is OS-global
@@ -104,10 +149,12 @@ persisted shape and the one-time migration off the old single-hotkey key.
 while one of the *host app's* own windows is active. This app never keeps a
 window open, so that plumbing is unused here (`CommandPalette` is constructed
 without ever calling `install_shortcut`). What FastCommandCenter *does* reuse
-from the library is `open_shortcut_editor` — the same add/replace/multi-remove
-UI pdf-toolkit uses — but wired to a different install backend: its
-`on_change` callback drives `core/hotkey_manager.py`'s OS-global winhotkeys
-registrations instead of Qt `QShortcut`s.
+from the library is the add/replace/multi-remove shortcut-editing logic —
+same as pdf-toolkit — but via `open_shortcut_editor_in_palette` (the
+in-palette variant, not pdf-toolkit's separate-window `open_shortcut_editor`)
+wired to a different install backend: its `on_change` callback drives
+`core/hotkey_manager.py`'s OS-global winhotkeys registrations instead of Qt
+`QShortcut`s.
 
 ## AI Workflow Rules (all languages, always apply)
 

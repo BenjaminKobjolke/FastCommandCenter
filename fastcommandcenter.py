@@ -19,8 +19,9 @@ from command_palette import (  # noqa: E402
     CommandPalette,
     KeymapState,
     PaletteConfig,
-    open_shortcut_editor,
+    open_shortcut_editor_in_palette,
 )
+from command_palette.dialog import FilterListDialog  # noqa: E402
 from command_palette.store import JsonStore, default_state_path  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
@@ -54,16 +55,27 @@ def main() -> None:
     bridge = HotkeyBridge()
     hotkey_manager = HotkeyManager()
 
-    def open_shortcuts_config() -> None:
-        open_shortcut_editor(
+    def mount_shortcuts(dialog: FilterListDialog) -> None:
+        """Drill the "Configure keyboard shortcuts" editor into the palette
+        that's already open, in place -- see ``settings``'s ``on_navigate``."""
+        open_shortcut_editor_in_palette(
+            dialog,
             commands,
             keymap_state,
             on_change=lambda keymap: hotkey_manager.apply(keymap, bridge.on_hotkey),
         )
 
+    def open_shortcuts_config() -> None:
+        """Open the palette already drilled into the shortcut editor -- used
+        by the tray action, the fresh-install prompt, and (via ``settings``'s
+        ``run``) a global OS hotkey bound directly to "settings", which fires
+        with no palette open yet."""
+        palette.open(navigate_to="settings")
+
     def apply_appearance(config: PaletteConfig) -> None:
         settings_store.set_appearance(config)
         palette.set_config(config)
+        palette.restyle_open_dialog()
 
     def open_palette() -> None:
         palette.open()
@@ -72,7 +84,12 @@ def main() -> None:
         # via QDialog.exec(), so this is only needed if focus-stealing is observed.)
 
     commands = build_commands(
-        open_palette, open_shortcuts_config, app.quit, settings_store, apply_appearance
+        open_palette,
+        open_shortcuts_config,
+        mount_shortcuts,
+        app.quit,
+        settings_store,
+        apply_appearance,
     )
     dispatch = {command.command_id: command.run for command in commands}
 
