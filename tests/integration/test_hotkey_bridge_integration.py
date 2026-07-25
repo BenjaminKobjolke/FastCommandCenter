@@ -18,15 +18,17 @@ def test_triggered_runs_on_gui_thread_when_emitted_from_background_thread():
 
     bridge = HotkeyBridge()
     seen_thread = {}
+    seen_command_id = {}
 
-    def on_triggered():
+    def on_triggered(command_id):
         seen_thread["thread"] = threading.current_thread()
+        seen_command_id["id"] = command_id
         loop.quit()
 
     bridge.triggered.connect(on_triggered)
 
     def fire_from_background():
-        bridge.on_hotkey()
+        bridge.on_hotkey("open_palette")
 
     worker = threading.Thread(target=fire_from_background)
 
@@ -38,4 +40,5 @@ def test_triggered_runs_on_gui_thread_when_emitted_from_background_thread():
 
     assert "thread" in seen_thread, "slot never ran"
     assert seen_thread["thread"] is threading.main_thread()
+    assert seen_command_id["id"] == "open_palette"
     assert QApplication.instance().thread() is gui_thread

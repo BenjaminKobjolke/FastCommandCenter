@@ -41,42 +41,73 @@ uv run pytest tests/ -v
 FastCommandCenter is a background Windows app with **no main window**. A
 system-wide global hotkey (OS-level, fires even when another app is focused)
 opens a PySide6 command palette; a system tray icon and the palette's own
-"Settings"/"Quit" entries are the only other way to reach the app.
+commands are the only other way to reach the app.
+
+### Design principle: the command palette is the primary settings UI
+
+Every user-facing setting (appearance: font size, window width/height %,
+opacity, row colors, etc.) is configured **through the command palette
+itself** — one `Appearance: ...` command per setting in
+`palette/commands.py`, applied live via a callback into
+`CommandPalette.set_config()`. Do not add new appearance controls anywhere else.
+
+Keyboard shortcuts are configured through the shared `python-command-palette`
+library's shortcut editor (`command_palette.open_shortcut_editor`), reachable
+from the tray menu ("Configure keyboard shortcuts") and the palette's own
+`settings` command — both call the same `open_shortcuts_config()` closure in
+`fastcommandcenter.py`. **Every** registered command (including `open_palette`,
+the opener itself) is a bindable target, and each can hold multiple chords —
+there is no more single "the" hotkey or emergency-only dialog; there is no
+`gui/settings_dialog.py` anymore. See `docs/SETTINGS_STORAGE.md` for the
+persisted shape and the one-time migration off the old single-hotkey key.
 
 ### Key Components
 
-- **`fastcommandcenter.py`**: entry point — builds `QApplication`, wires the
-  hotkey manager, palette, tray, and settings dialog, runs `app.exec()`.
-- **`core/hotkey_manager.py`**: thin wrapper over `winhotkeys.HotkeyHandler`
-  (OS-level `RegisterHotKey`). `start()`/`stop()`/`update_hotkey()`.
-- **`core/hotkey_bridge.py`**: a `QObject` with a `Signal`. `winhotkeys`
-  invokes its callback on its own background thread; a Qt dialog can only be
-  shown on the GUI thread. The bridge's `emit()` crosses that boundary via
-  Qt's automatic queued connection.
+- **`fastcommandcenter.py`**: entry point — builds `QApplication`, one shared
+  `Store` for this app's settings and the palette library's `key_bindings`,
+  wires the hotkey manager, palette, and tray, runs `app.exec()`.
+- **`core/hotkey_manager.py`**: owns every *live* OS-global hotkey
+  registration over `winhotkeys.HotkeyManager` (the underlying multi-hotkey
+  class, not the single-hotkey `HotkeyHandler` convenience). `apply(keymap,
+  on_fire)` tears down and re-registers every binding in one shot — called at
+  startup and again as the shortcut editor's `on_change` callback, so edits
+  take effect live. `winhotkeys_bindings(keymap)` is the pure
+  `KeyMap` → `[(winhotkeys_chord, command_id), ...]` mapping step, kept
+  separate so it's unit-testable without win32.
+- **`core/hotkey_bridge.py`**: a `QObject` with `Signal(str)` carrying the
+  fired binding's `command_id`. `winhotkeys` invokes its callback on its own
+  background thread; a Qt dialog can only be shown on the GUI thread. The
+  bridge's `emit()` crosses that boundary via Qt's automatic queued connection;
+  `fastcommandcenter.py` dispatches the id to the matching command's `run`.
 - **`core/single_instance.py`**: named Win32 mutex guard — a duplicate
-  instance would double-register the hotkey and show two tray icons, so a
+  instance would double-register hotkeys and show two tray icons, so a
   second launch just exits.
-- **`config/settings_store.py`**: persists the global hotkey chord via the
-  palette library's own `JsonStore` (`%APPDATA%\FastCommandCenter\command-palette\state.json`,
-  key `global_hotkey`) — separate from the palette's own internal keys
-  (`history`, `key_bindings`). Also owns `normalize_chord()`, which converts a
-  Qt chord string (`"Ctrl+Alt+P"`) to the lowercase `+`-joined format
-  `winhotkeys` expects (`"ctrl+alt+p"`; `Meta` → `win`).
-- **`gui/tray.py`**: `QSystemTrayIcon` with Open palette / Settings / Quit.
-- **`gui/settings_dialog.py`**: `QKeySequenceEdit`-based dialog to rebind the
-  global chord; on save, persists via `SettingsStore` and calls
-  `hotkey_manager.update_hotkey()` so the new chord is live immediately.
-- **`palette/commands.py`**: `build_commands()` — the palette's command list
-  (`settings`, `quit` in v1; more commands land here later).
+- **`config/settings_store.py`**: owns `DEFAULT_BINDINGS` (today: the opener's
+  default chord, handed to `KeymapState`), appearance persistence, and
+  `normalize_chord()`/`_to_qt_chord()` — the winhotkeys ↔ Qt chord format
+  converters. Also owns `migrate_legacy_chord()`, a one-time seed of
+  `open_palette`'s chord from the pre-multi-hotkey `global_hotkey` key (kept
+  only for that migration; nothing writes `global_hotkey` anymore).
+- **`gui/tray.py`**: `QSystemTrayIcon` with Open palette / Configure keyboard
+  shortcuts / Quit.
+- **`palette/commands.py`**: `build_commands()` — the palette's command list:
+  `open_palette` (the opener, now an ordinary bindable command),
+  `settings` (opens the shortcut editor), one `Appearance: ...` command per
+  tunable (font size, width %, height %, opacity, selected/other row color —
+  each persists via `SettingsStore.set_appearance()` and applies live via
+  `CommandPalette.set_config()`), and `quit`.
 
-### Important: the palette library does not do OS-global hotkeys
+### Important: the palette library's own shortcut mechanism is Qt-local; this app's is OS-global
 
-`python-command-palette`'s own shortcuts (`install_shortcut()`,
-`PaletteConfig.open_chord`) are Qt `ApplicationShortcut`s — they only fire
-while one of this app's own windows is active. This app never keeps a window
-open, so that mechanism is unused here. The actual system-wide hotkey is
-`winhotkeys` (`core/hotkey_manager.py`), wired to `palette.open()` through
-`core/hotkey_bridge.py`.
+`python-command-palette`'s own shortcut plumbing (`CommandPalette.install_shortcut()`,
+`PaletteConfig.open_chord`) installs Qt `ApplicationShortcut`s — they only fire
+while one of the *host app's* own windows is active. This app never keeps a
+window open, so that plumbing is unused here (`CommandPalette` is constructed
+without ever calling `install_shortcut`). What FastCommandCenter *does* reuse
+from the library is `open_shortcut_editor` — the same add/replace/multi-remove
+UI pdf-toolkit uses — but wired to a different install backend: its
+`on_change` callback drives `core/hotkey_manager.py`'s OS-global winhotkeys
+registrations instead of Qt `QShortcut`s.
 
 ## AI Workflow Rules (all languages, always apply)
 

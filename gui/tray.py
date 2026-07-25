@@ -19,7 +19,7 @@ class FastCommandTrayIcon(QSystemTrayIcon):
 def build_tray(
     app: QApplication,
     open_palette: Callable[[], None],
-    open_settings: Callable[[], None],
+    open_shortcuts_config: Callable[[], None],
 ) -> QSystemTrayIcon:
     """Create, wire, and show the tray icon with its context menu."""
     icon = app.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)
@@ -28,7 +28,7 @@ def build_tray(
 
     menu = QMenu()
     menu.addAction("Open palette", open_palette)
-    menu.addAction("Settings", open_settings)
+    menu.addAction("Configure keyboard shortcuts", open_shortcuts_config)
     menu.addSeparator()
     menu.addAction("Quit", app.quit)
     tray.setContextMenu(menu)

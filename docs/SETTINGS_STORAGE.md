@@ -18,45 +18,75 @@ fine at this scale, a handful of small keys.
 
 ```json
 {
+  "appearance": { ... },
   "global_hotkey": { "chord": "ctrl+alt+space" },
   "history": { ... },
-  "key_bindings": { ... }
+  "key_bindings": { "overrides": [{ "chord": "Ctrl+Alt+Q", "command_id": "quit" }] }
 }
 ```
 
-- **`global_hotkey`** — owned by FastCommandCenter (`config/settings_store.py`,
-  `CHORD_KEY = "global_hotkey"`). The only key this app writes.
-- **`history`**, **`key_bindings`** — owned internally by the
-  `python-command-palette` library (recently-used commands, any user-rebound
-  command shortcuts). FastCommandCenter never reads or writes these directly;
-  they exist because `CommandPalette` shares the same `JsonStore` instance
-  by default (same `default_state_path()` call, same app name).
+- **`appearance`** — owned by FastCommandCenter (`config/settings_store.py`,
+  `APPEARANCE_KEY = "appearance"`). Font size, window width/height %, opacity,
+  selected/other row colors.
+- **`key_bindings`** — owned by the `python-command-palette` library
+  (`KeymapState`, `KEY_BINDINGS_KEY = "key_bindings"`) but this is the key that
+  actually matters now: every command's global hotkey(s) live here as
+  chord-keyed overrides layered onto `SettingsStore.DEFAULT_BINDINGS`. Both
+  `fastcommandcenter.py`'s `KeymapState` and `CommandPalette`'s own (unused,
+  since this app never calls `install_shortcut`) history/keymap state share the
+  same `JsonStore` instance, so this key is the single source of truth for
+  what fires which command.
+- **`global_hotkey`** — **legacy**, from the pre-multi-hotkey single-chord
+  design. Nothing writes it anymore (`gui/settings_dialog.py`, its only writer,
+  is deleted). It's read exactly once, by `SettingsStore.migrate_legacy_chord()`
+  at startup, to seed `open_palette`'s chord into `key_bindings` for an
+  existing local install that had customized it — see "Migration" below.
+- **`history`** — owned internally by the library (recently-used commands, for
+  the palette's own MRU ordering). FastCommandCenter never reads or writes it.
 
-Keeping the hotkey under its own key, separate from the library's keys, means
-either side can add/change its own data without colliding with the other's.
+## Migration off the single-hotkey key
+
+`SettingsStore.migrate_legacy_chord(keymap_state)` (`config/settings_store.py`,
+called once at startup in `fastcommandcenter.py`) is a one-time bridge:
+
+1. No-op if `open_palette`'s effective chords already differ from
+   `DEFAULT_BINDINGS`' untouched default (the user has already used the new
+   per-command shortcut editor, or a previous run already migrated).
+2. No-op if `global_hotkey` was never saved, or was saved as exactly the
+   default chord (nothing to preserve).
+3. Otherwise: `keymap_state.remove_command("open_palette")` (clears the
+   still-live default chord) then `keymap_state.assign(...)` the legacy chord
+   — **replace**, not add, so the user doesn't end up with two live global
+   hotkeys for the same command.
+
+After this runs once, `key_bindings` is authoritative and `global_hotkey` goes
+permanently dormant (still present on disk for old installs, never read again
+outside this function).
 
 ## Read/write path
 
-`SettingsStore` (`config/settings_store.py`) is the only code in this app that
-touches the file, via `Store.read()` / `Store.write()`:
+- `SettingsStore` (`config/settings_store.py`) owns `appearance` and the
+  legacy `global_hotkey` key, via `Store.read()` / `Store.write()`.
+- `KeymapState` (library) owns `key_bindings` — `fastcommandcenter.py`
+  constructs one directly (`KeymapState(shared_store, DEFAULT_BINDINGS)`) and
+  passes it to `open_shortcut_editor` and `HotkeyManager.apply()`.
 
-- `get_chord()` → `store.read("global_hotkey")` → `DEFAULT_CHORD`
-  (`"ctrl+alt+space"`) if the key is absent or malformed.
-- `set_chord(chord)` → `store.write("global_hotkey", {"chord": chord})`.
-- `has_chord()` → `store.read("global_hotkey") is not None` — used once, at
-  startup, to decide whether to auto-open Settings on first run
-  (`fastcommandcenter.py`).
+`SettingsStore.get_chord()`/`set_chord()`/`has_chord()` still exist (the
+legacy key's accessors) but only `migrate_legacy_chord()` calls them now — no
+other code path writes `global_hotkey`.
 
 ## Failure behavior
 
 `JsonStore._load()` (library code) never raises: a missing file returns `{}`,
 and a missing/corrupt file logs a warning and is treated as empty rather than
-crashing the app. A bad or hand-edited `state.json` degrades to "no chord
-saved yet" — the app falls back to `DEFAULT_CHORD` and offers Settings again,
-it doesn't fail to start.
+crashing the app. A bad or hand-edited `state.json` degrades to "no bindings
+saved yet" — the app falls back to `DEFAULT_BINDINGS` and offers the shortcut
+editor again on next launch, it doesn't fail to start.
 
 ## Testing
 
-`SettingsStore(store=...)` takes an optional `Store`; tests pass
-`MemoryStore()` (in-process dict, same `Store` protocol) instead of a real
-`JsonStore` — no filesystem, no `%APPDATA%` involved.
+`SettingsStore(store=...)` and `KeymapState(store, defaults)` both take a
+`Store`; tests pass a shared `MemoryStore()` (in-process dict, same `Store`
+protocol) instead of a real `JsonStore` — no filesystem, no `%APPDATA%`
+involved. See `tests/unit/test_chord.py` for the migration's characterization
+tests.

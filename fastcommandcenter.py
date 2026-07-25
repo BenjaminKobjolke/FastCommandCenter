@@ -15,15 +15,20 @@ for _stream in (sys.stdout, sys.stderr):
     if _stream is not None and hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8", errors="replace")
 
-from command_palette import CommandPalette, PaletteConfig  # noqa: E402
+from command_palette import (  # noqa: E402
+    CommandPalette,
+    KeymapState,
+    PaletteConfig,
+    open_shortcut_editor,
+)
+from command_palette.store import JsonStore, default_state_path  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from app_logger import AppLogger  # noqa: E402
-from config.settings_store import SettingsStore  # noqa: E402
+from config.settings_store import APP_NAME, DEFAULT_BINDINGS, SettingsStore  # noqa: E402
 from core.hotkey_bridge import HotkeyBridge  # noqa: E402
 from core.hotkey_manager import HotkeyManager  # noqa: E402
 from core.single_instance import SingleInstance  # noqa: E402
-from gui.settings_dialog import SettingsDialog  # noqa: E402
 from gui.tray import build_tray  # noqa: E402
 from palette.commands import build_commands  # noqa: E402
 
@@ -38,17 +43,27 @@ def main() -> None:
     app.setApplicationName("FastCommandCenter")
     app.setQuitOnLastWindowClosed(False)  # background app: closing a dialog must not exit it
 
-    settings_store = SettingsStore()
+    # One shared store for this app's own settings (appearance, the legacy
+    # single-hotkey key) and the palette library's `key_bindings` -- every
+    # command's global hotkey(s) live there via KeymapState.
+    shared_store = JsonStore(default_state_path(APP_NAME))
+    settings_store = SettingsStore(shared_store)
+    keymap_state = KeymapState(shared_store, DEFAULT_BINDINGS)
+    settings_store.migrate_legacy_chord(keymap_state)
+
     bridge = HotkeyBridge()
-    hotkey_manager = HotkeyManager(settings_store.get_chord(), bridge.on_hotkey)
+    hotkey_manager = HotkeyManager()
 
-    def open_settings() -> None:
-        SettingsDialog(settings_store, hotkey_manager).exec()
+    def open_shortcuts_config() -> None:
+        open_shortcut_editor(
+            commands,
+            keymap_state,
+            on_change=lambda keymap: hotkey_manager.apply(keymap, bridge.on_hotkey),
+        )
 
-    palette = CommandPalette(
-        build_commands(open_settings, app.quit),
-        config=PaletteConfig(frameless=True),
-    )
+    def apply_appearance(config: PaletteConfig) -> None:
+        settings_store.set_appearance(config)
+        palette.set_config(config)
 
     def open_palette() -> None:
         palette.open()
@@ -56,16 +71,26 @@ def main() -> None:
         # (Verify at runtime; command-palette's dialog handles its own show/raise
         # via QDialog.exec(), so this is only needed if focus-stealing is observed.)
 
-    bridge.triggered.connect(open_palette)
-    hotkey_manager.start()
+    commands = build_commands(
+        open_palette, open_shortcuts_config, app.quit, settings_store, apply_appearance
+    )
+    dispatch = {command.command_id: command.run for command in commands}
 
-    build_tray(app, open_palette, open_settings)  # app-parented inside; that keeps it alive
+    palette = CommandPalette(commands, store=shared_store, config=settings_store.get_appearance())
+
+    bridge.triggered.connect(lambda command_id: dispatch.get(command_id, lambda: None)())
+    hotkey_manager.apply(keymap_state.effective(), bridge.on_hotkey)
+
+    build_tray(app, open_palette, open_shortcuts_config)  # app-parented inside; that keeps it alive
 
     app.aboutToQuit.connect(hotkey_manager.stop)
     app.aboutToQuit.connect(single_instance.cleanup)
 
-    if not settings_store.has_chord():
-        open_settings()
+    if keymap_state.effective().bindings == tuple(DEFAULT_BINDINGS):
+        # Nothing has ever been customized (fresh install, or a legacy chord
+        # that matched the default and so migrated to nothing) -- surface the
+        # editor once so the user knows shortcuts are configurable.
+        open_shortcuts_config()
 
     sys.exit(app.exec())
 
