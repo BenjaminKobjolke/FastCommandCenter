@@ -1,0 +1,42 @@
+[project]
+name = "fastcommandcenter"
+version = "0.1.0"
+description = "Global-hotkey command palette for Windows, no main window"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "PySide6>=6.11.1",
+    "command-palette",
+    "pywin32>=310",
+    "winhotkeys @ git+https://github.com/BenjaminKobjolke/winhotkeys.git@053b0b20bd5d747a4b795d0d392a4a48161fcada",
+]
+
+[tool.uv.sources]
+command-palette = { path = "D:/GIT/BenjaminKobjolke/python-command-palette", editable = true }
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.13.0",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "pytest>=8.3",
+    "types-pywin32",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["core", "config", "gui", "palette", "fastcommandcenter.py"]
+
+[[tool.mypy.overrides]]
+module = "winhotkeys"
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
