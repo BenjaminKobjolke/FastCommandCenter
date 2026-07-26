@@ -6,7 +6,8 @@ lives in `gui/tray.py`, wired up once from `fastcommandcenter.py:main()`.
 
 ## Where it's built
 
-`build_tray(app, open_palette, open_shortcuts_config)` (`gui/tray.py`) creates:
+`build_tray(app, open_palette, open_shortcuts_config, quit_app)` (`gui/tray.py`)
+creates:
 
 - **Icon** — `app.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)`,
   a built-in Qt icon (no custom asset yet).
@@ -18,11 +19,12 @@ lives in `gui/tray.py`, wired up once from `fastcommandcenter.py:main()`.
      palette navigated straight into the shared `python-command-palette`
      shortcut editor — drilled into the same window, not a separate dialog)
   3. *(separator)*
-  4. `Quit` → `app.quit`
+  4. `Quit` → `quit_app` (`fastcommandcenter.py`'s `request_quit` — see
+     "Quitting" below, not a direct `app.quit`)
 
-`main()` calls `build_tray(app, open_palette, open_shortcuts_config)` after the
-hotkey manager is started, and does **not** need to keep the returned value —
-the tray keeps itself alive (below).
+`main()` calls `build_tray(app, open_palette, open_shortcuts_config, request_quit)`
+after the hotkey manager is started, and does **not** need to keep the
+returned value — the tray keeps itself alive (below).
 
 ## Lifetime — why the tray is app-parented
 
@@ -44,3 +46,13 @@ the way most Qt parent/child widgets do, so the menu needs its own keep-alive:
 - The tray's `Open palette` entry and the global OS hotkey both call the same
   `open_palette()` closure in `fastcommandcenter.py` — there's exactly one
   code path that opens the palette.
+- **Quitting** — both `Quit` (tray) and `Quit FastCommandCenter` (palette
+  command, see `palette/commands.py`) fire while a *nested* Qt event loop is
+  running (the tray menu's own popup loop; the palette's `dialog.exec()`). A
+  direct `app.quit()` from inside that inner loop only ends the inner loop,
+  not `app.exec()` in `main()` — the process would keep running silently.
+  `fastcommandcenter.py`'s `request_quit()` defers with
+  `QTimer.singleShot(0, app.quit)` so the quit lands on the main loop once the
+  nested one has unwound, which is what lets `app.aboutToQuit` actually fire
+  (tearing down the hotkey registrations and releasing the single-instance
+  mutex).

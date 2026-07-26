@@ -23,6 +23,7 @@ from command_palette import (  # noqa: E402
 )
 from command_palette.dialog import FilterListDialog  # noqa: E402
 from command_palette.store import JsonStore, default_state_path  # noqa: E402
+from PySide6.QtCore import QTimer  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from app_logger import AppLogger  # noqa: E402
@@ -83,11 +84,19 @@ def main() -> None:
         # (Verify at runtime; command-palette's dialog handles its own show/raise
         # via QDialog.exec(), so this is only needed if focus-stealing is observed.)
 
+    def request_quit() -> None:
+        # Both callers (palette command, tray menu action) fire this from
+        # inside a nested Qt event loop (the palette's dialog.exec(), the
+        # tray menu's popup loop) -- a direct app.quit() there only exits
+        # that inner loop and the process keeps running. Defer to the next
+        # main-loop iteration so it actually terminates app.exec().
+        QTimer.singleShot(0, app.quit)
+
     commands = build_commands(
         open_palette,
         open_shortcuts_config,
         mount_shortcuts,
-        app.quit,
+        request_quit,
         settings_store,
         apply_appearance,
     )
@@ -98,7 +107,9 @@ def main() -> None:
     bridge.triggered.connect(lambda command_id: dispatch.get(command_id, lambda: None)())
     hotkey_manager.apply(keymap_state.effective(), bridge.on_hotkey)
 
-    build_tray(app, open_palette, open_shortcuts_config)  # app-parented inside; that keeps it alive
+    build_tray(
+        app, open_palette, open_shortcuts_config, request_quit
+    )  # app-parented inside; that keeps it alive
 
     app.aboutToQuit.connect(hotkey_manager.stop)
     app.aboutToQuit.connect(single_instance.cleanup)

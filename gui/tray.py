@@ -20,6 +20,7 @@ def build_tray(
     app: QApplication,
     open_palette: Callable[[], None],
     open_shortcuts_config: Callable[[], None],
+    quit_app: Callable[[], None],
 ) -> QSystemTrayIcon:
     """Create, wire, and show the tray icon with its context menu."""
     icon = app.style().standardIcon(QStyle.StandardPixmap.SP_ComputerIcon)
@@ -30,7 +31,7 @@ def build_tray(
     menu.addAction("Open palette", open_palette)
     menu.addAction("Configure keyboard shortcuts", open_shortcuts_config)
     menu.addSeparator()
-    menu.addAction("Quit", app.quit)
+    menu.addAction("Quit", quit_app)
     tray.setContextMenu(menu)
     tray.menu_ref = menu  # QSystemTrayIcon doesn't own the menu; keep a ref so it isn't GC'd
 
