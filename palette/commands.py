@@ -74,7 +74,7 @@ def build_commands(
             command_id="appearance_font",
             title="Appearance: font size",
             run=_NO_RUN,
-            submenu=_font_size_entries,
+            submenu=lambda: _font_size_entries(settings_store.get_appearance().font_pt),
             on_submenu_choice=lambda value: apply_appearance(
                 replace(settings_store.get_appearance(), font_pt=value)
             ),
@@ -83,7 +83,9 @@ def build_commands(
             command_id="appearance_width",
             title="Appearance: window width",
             run=_NO_RUN,
-            submenu=lambda: _percent_entries(WIDTH_PCT_MIN, WIDTH_PCT_MAX),
+            submenu=lambda: _percent_entries(
+                WIDTH_PCT_MIN, WIDTH_PCT_MAX, settings_store.get_appearance().width_pct
+            ),
             on_submenu_choice=lambda value: apply_appearance(
                 replace(settings_store.get_appearance(), width_pct=value)
             ),
@@ -92,7 +94,9 @@ def build_commands(
             command_id="appearance_height",
             title="Appearance: window height",
             run=_NO_RUN,
-            submenu=lambda: _percent_entries(HEIGHT_PCT_MIN, HEIGHT_PCT_MAX),
+            submenu=lambda: _percent_entries(
+                HEIGHT_PCT_MIN, HEIGHT_PCT_MAX, settings_store.get_appearance().height_pct
+            ),
             on_submenu_choice=lambda value: apply_appearance(
                 replace(settings_store.get_appearance(), height_pct=value)
             ),
@@ -101,7 +105,9 @@ def build_commands(
             command_id="appearance_opacity",
             title="Appearance: opacity",
             run=_NO_RUN,
-            submenu=lambda: _percent_entries(OPACITY_PCT_MIN, OPACITY_PCT_MAX),
+            submenu=lambda: _percent_entries(
+                OPACITY_PCT_MIN, OPACITY_PCT_MAX, settings_store.get_appearance().opacity_pct
+            ),
             on_submenu_choice=lambda value: apply_appearance(
                 replace(settings_store.get_appearance(), opacity_pct=value)
             ),
@@ -128,18 +134,25 @@ def build_commands(
     ]
 
 
-def _font_size_entries() -> list[ListEntry]:
+def _font_size_entries(current: int) -> list[ListEntry]:
     return [
-        ListEntry(title=("Default (theme size)" if size == 0 else f"{size} pt"), payload=size)
+        ListEntry(
+            title=("Default (theme size)" if size == 0 else f"{size} pt"),
+            payload=size,
+            selected=size == current,
+        )
         for size in _FONT_SIZES
     ]
 
 
-def _percent_entries(minimum: int, maximum: int) -> list[ListEntry]:
+def _percent_entries(minimum: int, maximum: int, current: int) -> list[ListEntry]:
     # ponytail: assumes [minimum, maximum] is step-aligned (true for all three
     # current bounds, 20-100); a future non-aligned bound would just drop the
     # top value from the list, not crash.
-    return [ListEntry(title=f"{v}%", payload=v) for v in range(minimum, maximum + 1, _PERCENT_STEP)]
+    return [
+        ListEntry(title=f"{v}%", payload=v, selected=v == current)
+        for v in range(minimum, maximum + 1, _PERCENT_STEP)
+    ]
 
 
 def _color_choice_entries() -> list[ListEntry]:
