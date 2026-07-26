@@ -155,6 +155,18 @@ not repeated here.
 - **`core/single_instance.py`**: named Win32 mutex guard — a duplicate
   instance would double-register hotkeys and show two tray icons, so a
   second launch just exits.
+- **`core/window_activation.py`**: `force_foreground(hwnd)` — a background
+  tray/hotkey process is never Windows' foreground process, and
+  `python-command-palette`'s dialog does no activation of its own (plain
+  `QDialog.exec()`), so a fresh `palette.open()` triggered by the global
+  hotkey can be blocked by Windows' foreground lock and never come to the
+  front. Attaches this process's input thread to the current foreground
+  window's thread (`AttachThreadInput`) so `SetForegroundWindow` succeeds,
+  then detaches. `fastcommandcenter.py`'s `open_palette()` and
+  `open_shortcuts_config()` both schedule it via
+  `QTimer.singleShot(0, ...)` right before calling `palette.open()`, so it
+  fires once the dialog exists as the active modal inside `exec()`'s nested
+  loop.
 - **`config/settings_store.py`**: owns `DEFAULT_BINDINGS` (today: the opener's
   default chord, handed to `KeymapState`), appearance persistence, and
   `normalize_chord()`/`_to_qt_chord()` — the winhotkeys ↔ Qt chord format

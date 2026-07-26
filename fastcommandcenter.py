@@ -32,6 +32,7 @@ from core.hotkey_bridge import HotkeyBridge  # noqa: E402
 from core.hotkey_manager import HotkeyManager, winhotkeys_bindings  # noqa: E402
 from core.single_instance import SingleInstance  # noqa: E402
 from core.tool_commands import build_tool_commands  # noqa: E402
+from core.window_activation import force_foreground  # noqa: E402
 from gui.tray import build_tray  # noqa: E402
 from palette.commands import build_commands  # noqa: E402
 
@@ -67,11 +68,22 @@ def main() -> None:
             on_change=lambda keymap: hotkey_manager.apply(keymap, bridge.on_hotkey),
         )
 
+    def _raise_palette_to_foreground() -> None:
+        """Windows foreground-lock workaround -- see `core/window_activation.py`.
+        Queued via QTimer.singleShot(0, ...) so it fires on the next event-loop
+        turn, once the dialog `palette.open()` creates already exists as the
+        active modal -- `exec()` hasn't returned yet, but its nested loop is
+        spinning."""
+        dialog = app.activeModalWidget() or app.activeWindow()
+        if dialog is not None:
+            force_foreground(int(dialog.winId()))
+
     def open_shortcuts_config() -> None:
         """Open the palette already drilled into the shortcut editor -- used
         by the tray action, the fresh-install prompt, and (via ``settings``'s
         ``run``) a global OS hotkey bound directly to "settings", which fires
         with no palette open yet."""
+        QTimer.singleShot(0, _raise_palette_to_foreground)
         palette.open(navigate_to="settings")
 
     def apply_appearance(config: PaletteConfig) -> None:
@@ -80,10 +92,8 @@ def main() -> None:
         palette.restyle_open_dialog()
 
     def open_palette() -> None:
+        QTimer.singleShot(0, _raise_palette_to_foreground)
         palette.open()
-        # Opening from a background process may not steal focus by default.
-        # (Verify at runtime; command-palette's dialog handles its own show/raise
-        # via QDialog.exec(), so this is only needed if focus-stealing is observed.)
 
     def request_quit() -> None:
         # Both callers (palette command, tray menu action) fire this from
