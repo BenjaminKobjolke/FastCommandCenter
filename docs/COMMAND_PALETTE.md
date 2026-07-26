@@ -25,6 +25,7 @@ Built once by `build_commands()` in `palette/commands.py`:
 | `settings` (title: "Configure keyboard shortcuts") | Navigable — drills into the shortcut editor in the same window. |
 | `Appearance: font size` / `window width` / `window height` / `opacity` | Navigable — drills into a value list. |
 | `Appearance: selected row color` / `other rows color` | Navigable — drills into "Choose custom color…" / "Reset to theme default". |
+| `Tools: manage folders` | Navigable — add/remove the folders scanned for external tools (see "External tool commands" below). |
 | `quit` (title: "Quit FastCommandCenter") | Terminal — runs and closes the palette. |
 
 Every command is a bindable global-hotkey target (see `Configure keyboard
@@ -60,6 +61,29 @@ setting — never a separate settings dialog. Picking a value:
    both `palette.set_config()` (affects the *next* `open()`) and
    `palette.restyle_open_dialog()` (re-styles the dialog that's open *right
    now*), so the change is visible immediately without closing and reopening.
+
+## External tool commands
+
+Beyond the fixed list above, the palette carries one **dynamic** command per
+action declared by an external FastTools app — e.g. "Fast Keyboard Mouse:
+Toggle mouse mode" (`command_id` = `tool.fastkeyboardmouse.toggle`). Firing
+one finds-or-launches the tool and sends it the action over `WM_COPYDATA`;
+the tool runs in a "palette-managed" mode where it does *not* register its
+own OS-global hotkey, since this palette is meant to be the single hotkey
+authority — run the same tool directly (not through the palette) and it
+behaves exactly as it always has.
+
+`Tools: manage folders` is how you add or remove which folders get scanned
+for these — "Add folder…" opens a native folder picker (the same "one
+unavoidable exception to staying inside the palette" the color pickers use),
+each configured folder shows as a `Remove: <path>` row. A newly added tool's
+actions become visible the next time the palette is *opened*, and start with
+no hotkey bound — bind one through `Configure keyboard shortcuts` below, same
+as any other command.
+
+See **`docs/EXTERNAL_TOOLS.md`** for how this is implemented (the
+`fasttool_host` bridge, the in-place command-list refresh, the repo split)
+and `FastCommandCenter-tool-bridge/CONTRACT.md` for the wire protocol.
 
 ## Configure keyboard shortcuts
 

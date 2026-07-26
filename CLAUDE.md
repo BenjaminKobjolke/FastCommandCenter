@@ -28,6 +28,17 @@ If it's ambiguous, ask before implementing rather than guessing — a fix placed
 in the wrong repo either duplicates library logic here or couples the library
 to FastCommandCenter-specific concerns.
 
+## Dependency: `FastCommandCenter-tool-bridge`
+
+FastCommandCenter is also the single global-hotkey authority and launcher for
+other FastTools apps (FastKeyboardMouse, and future AHK/Python tools), via a
+dedicated sibling repo: `D:\GIT\BenjaminKobjolke\FastTools\FastCommandCenter-tool-bridge`
+(own `CONTRACT.md` = the wire protocol, plus client shims and the
+`fasttool_host` package this app depends on). Same repo-split judgment call
+as above applies. **See `docs/EXTERNAL_TOOLS.md`** for the full breakdown —
+how this plugs into `core/tool_commands.py`/`palette/commands.py`, and where
+a change belongs.
+
 ## Commands
 
 ### Setup & Installation
@@ -100,6 +111,13 @@ more single "the" hotkey or emergency-only dialog; there is no
 persisted shape and the one-time migration off the old single-hotkey key, and
 the library's `docs/NAVIGATION.md` for the underlying push/pop/capture API.
 
+### Design principle: the palette is the single OS-global hotkey authority, other tools defer to it
+
+An external FastTools app (FastKeyboardMouse, etc.) can be configured to
+defer its own hotkey to this palette instead — full mechanics, the in-place
+`commands`/`dispatch` refresh, and why, are in **`docs/EXTERNAL_TOOLS.md`**,
+not repeated here.
+
 ### Key Components
 
 - **`fastcommandcenter.py`**: entry point — builds `QApplication`, one shared
@@ -108,7 +126,10 @@ the library's `docs/NAVIGATION.md` for the underlying push/pop/capture API.
   the closures the `settings` command uses: `mount_shortcuts(dialog)` (its
   `on_navigate` — mounts the in-palette editor on the live dialog) and
   `open_shortcuts_config()` (its `run`, and what the tray/fresh-install path
-  calls — opens the palette navigated straight to the editor).
+  calls — opens the palette navigated straight to the editor). Also builds
+  `refresh_tool_commands()` — see `docs/EXTERNAL_TOOLS.md`.
+- **`core/tool_commands.py`**: bridges this app's `Command` list to
+  `fasttool_host.ToolBridge` — see `docs/EXTERNAL_TOOLS.md`.
 - **`core/hotkey_manager.py`**: owns every *live* OS-global hotkey
   registration over `winhotkeys.HotkeyManager` (the underlying multi-hotkey
   class, not the single-hotkey `HotkeyHandler` convenience). `apply(keymap,
@@ -140,7 +161,8 @@ the library's `docs/NAVIGATION.md` for the underlying push/pop/capture API.
   command per tunable (font size, width %, height %, opacity, selected/other
   row color — each is navigable via `submenu`/`on_submenu_choice`, persists
   via `SettingsStore.set_appearance()`, applies live via
-  `CommandPalette.set_config()`), and `quit`.
+  `CommandPalette.set_config()`), `manage_tool_folders` (navigable — see
+  `docs/EXTERNAL_TOOLS.md`), and `quit`.
 
 ### Important: the palette library's own shortcut mechanism is Qt-local; this app's is OS-global
 

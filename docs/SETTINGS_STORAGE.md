@@ -21,13 +21,22 @@ fine at this scale, a handful of small keys.
   "appearance": { ... },
   "global_hotkey": { "chord": "ctrl+alt+space" },
   "history": { ... },
-  "key_bindings": { "overrides": [{ "chord": "Ctrl+Alt+Q", "command_id": "quit" }] }
+  "key_bindings": { "overrides": [{ "chord": "Ctrl+Alt+Q", "command_id": "quit" }] },
+  "tool_dirs": { "dirs": ["D:\\GIT\\BenjaminKobjolke\\FastTools\\FastKeyboardMouse"] }
 }
 ```
 
 - **`appearance`** — owned by FastCommandCenter (`config/settings_store.py`,
   `APPEARANCE_KEY = "appearance"`). Font size, window width/height %, opacity,
   selected/other row colors.
+- **`tool_dirs`** — owned by FastCommandCenter (`config/settings_store.py`,
+  `TOOL_DIRS_KEY = "tool_dirs"`). The list of folders scanned for a
+  `fasttool.json` manifest — one entry per external FastTools app the palette
+  can launch and drive (see `docs/COMMAND_PALETTE.md`'s "External tool
+  commands" and `FastCommandCenter-tool-bridge/CONTRACT.md`). Empty by
+  default; never hand-edit this — use the palette's own "Tools: manage
+  folders" command (`get_tool_dirs()`/`set_tool_dirs()` are the only reader/
+  writer, both in `config/settings_store.py`).
 - **`key_bindings`** — owned by the `python-command-palette` library
   (`KeymapState`, `KEY_BINDINGS_KEY = "key_bindings"`) but this is the key that
   actually matters now: every command's global hotkey(s) live here as

@@ -7,6 +7,13 @@ or via the palette's own "Settings"/"Quit" entries. Settings and Appearance
 both drill into the same palette window instead of popping up separate
 dialogs — Esc backs out one step at a time, same as the rest of the palette.
 
+It also acts as a single global-hotkey authority and launcher for other
+FastTools apps (e.g. FastKeyboardMouse) — use the palette's `Tools: manage
+folders` command to point it at a tool's folder, then bind its actions a
+hotkey the same way as any built-in command. See
+`docs/COMMAND_PALETTE.md`'s "External tool commands" section and the
+`FastCommandCenter-tool-bridge` repo's `CONTRACT.md` for how this works.
+
 ## Install / Setup
 
 ```bash
@@ -15,8 +22,11 @@ install.bat
 
 This runs `uv sync --group dev`. Requires [uv](https://docs.astral.sh/uv/) and
 a git-accessible checkout of `winhotkeys` (installed automatically as a git
-dependency) plus a local checkout of `python-command-palette` at
-`D:\GIT\BenjaminKobjolke\python-command-palette` (installed editable).
+dependency) plus local checkouts of `python-command-palette` at
+`D:\GIT\BenjaminKobjolke\python-command-palette` and `fasttool-host` (part of
+`FastCommandCenter-tool-bridge`) at
+`D:\GIT\BenjaminKobjolke\FastTools\FastCommandCenter-tool-bridge\host\fasttool_host`
+(both installed editable).
 
 ## Usage
 
@@ -38,6 +48,7 @@ pick one.
 - [PySide6](https://pypi.org/project/PySide6/) `>=6.11.1` — GUI toolkit
 - [command-palette](https://github.com/BenjaminKobjolke/python-command-palette) — the palette widget (editable local install)
 - [winhotkeys](https://github.com/BenjaminKobjolke/winhotkeys) — OS-level global hotkey registration
+- fasttool-host (from `FastCommandCenter-tool-bridge`, editable local install) — loads external tools' `fasttool.json` manifests, launches/finds them, sends actions over `WM_COPYDATA`
 - pywin32 — required by winhotkeys and the single-instance guard
 
 ## Development

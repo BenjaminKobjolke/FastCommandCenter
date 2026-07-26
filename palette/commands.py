@@ -34,7 +34,7 @@ from command_palette.appearance import (
     WIDTH_PCT_MIN,
 )
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QColorDialog
+from PySide6.QtWidgets import QColorDialog, QFileDialog
 
 from config.settings_store import SettingsStore
 
@@ -45,6 +45,7 @@ _FONT_SIZES = [0, 10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40]
 _PERCENT_STEP = 10
 _RESET_TO_DEFAULT = "__reset__"
 _CHOOSE_CUSTOM = "__custom__"
+_ADD_TOOL_FOLDER = "__add_tool_folder__"
 
 ApplyAppearance = Callable[[PaletteConfig], None]
 _NO_RUN: Callable[[], None] = lambda: None  # noqa: E731 — navigable commands never run() directly
@@ -57,6 +58,7 @@ def build_commands(
     quit_app: Callable[[], None],
     settings_store: SettingsStore,
     apply_appearance: ApplyAppearance,
+    refresh_tool_commands: Callable[[], None],
 ) -> list[Command]:
     return [
         Command(
@@ -130,6 +132,15 @@ def build_commands(
                 choice, settings_store, apply_appearance
             ),
         ),
+        Command(
+            command_id="manage_tool_folders",
+            title="Tools: manage folders",
+            run=_NO_RUN,
+            submenu=lambda: _tool_folder_entries(settings_store),
+            on_submenu_choice=lambda choice: _apply_tool_folder_choice(
+                choice, settings_store, refresh_tool_commands
+            ),
+        ),
         Command(command_id="quit", title="Quit FastCommandCenter", run=quit_app),
     ]
 
@@ -191,3 +202,35 @@ def _pick_native_color(initial: str | None, *, title: str) -> str | None:
     inside the palette — a color wheel can't be a filter-list)."""
     picked = QColorDialog.getColor(QColor(initial or "#ffffff"), None, title)
     return picked.name() if picked.isValid() else None
+
+
+def _tool_folder_entries(settings_store: SettingsStore) -> list[ListEntry]:
+    entries = [ListEntry(title="Add folder…", payload=_ADD_TOOL_FOLDER)]
+    entries += [
+        ListEntry(title=f"Remove: {folder}", payload=folder)
+        for folder in settings_store.get_tool_dirs()
+    ]
+    return entries
+
+
+def _apply_tool_folder_choice(
+    choice: str, settings_store: SettingsStore, refresh_tool_commands: Callable[[], None]
+) -> None:
+    folders = settings_store.get_tool_dirs()
+    if choice == _ADD_TOOL_FOLDER:
+        picked = _pick_tool_folder()
+        if picked is None or picked in folders:
+            return
+        settings_store.set_tool_dirs([*folders, picked])
+    else:
+        # Any other payload is one of the folders listed as a "Remove: ..."
+        # row above -- selecting it removes it, symmetric with adding.
+        settings_store.set_tool_dirs([folder for folder in folders if folder != choice])
+    refresh_tool_commands()
+
+
+def _pick_tool_folder() -> str | None:
+    """Open the native folder browser (same "one unavoidable exception" as
+    _pick_native_color — a filesystem path can't be a filter-list row)."""
+    picked = QFileDialog.getExistingDirectory(None, "Add tool folder")
+    return picked or None

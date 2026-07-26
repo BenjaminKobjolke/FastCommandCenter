@@ -70,6 +70,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "command-palette" },
+    { name = "fasttool-host" },
     { name = "pyside6" },
     { name = "pywin32" },
     { name = "winhotkeys" },
@@ -87,6 +88,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "command-palette", editable = "../../python-command-palette" },
+    { name = "fasttool-host", editable = "../FastCommandCenter-tool-bridge/host/fasttool_host" },
     { name = "pyside6", specifier = ">=6.11.1" },
     { name = "pywin32", specifier = ">=310" },
     { name = "winhotkeys", git = "https://github.com/BenjaminKobjolke/winhotkeys.git?rev=053b0b20bd5d747a4b795d0d392a4a48161fcada" },
@@ -99,6 +101,24 @@ dev = [
     { name = "pytest", specifier = ">=8.3" },
     { name = "ruff", specifier = ">=0.8" },
     { name = "types-pywin32" },
+]
+
+[[package]]
+name = "fasttool-host"
+version = "0.1.0"
+source = { editable = "../FastCommandCenter-tool-bridge/host/fasttool_host" }
+dependencies = [
+    { name = "pyside6" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pyside6", specifier = ">=6.11.1" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "mypy", specifier = ">=1.13" },
+    { name = "pytest", specifier = ">=8.3" },
+    { name = "ruff", specifier = ">=0.8" },
 ]
 
 [[package]]

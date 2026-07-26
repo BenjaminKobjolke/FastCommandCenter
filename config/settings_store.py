@@ -21,6 +21,7 @@ APP_NAME = "FastCommandCenter"
 CHORD_KEY = "global_hotkey"
 DEFAULT_CHORD = "ctrl+alt+space"
 APPEARANCE_KEY = "appearance"
+TOOL_DIRS_KEY = "tool_dirs"
 OPEN_PALETTE_COMMAND_ID = "open_palette"
 DEFAULT_BINDINGS: list[DefaultPair] = [("Ctrl+Alt+Space", OPEN_PALETTE_COMMAND_ID)]
 
@@ -111,3 +112,16 @@ class SettingsStore:
         """Persist the tunable appearance fields of ``config``."""
         data = asdict(config)
         self._store.write(APPEARANCE_KEY, {key: data[key] for key in _APPEARANCE_FIELDS})
+
+    def get_tool_dirs(self) -> list[str]:
+        """Folders to scan for a `fasttool.json` manifest -- see
+        FastCommandCenter-tool-bridge/CONTRACT.md. Empty if none configured."""
+        data = self._store.read(TOOL_DIRS_KEY)
+        if data is None:
+            return []
+        dirs = data.get("dirs")
+        return list(dirs) if isinstance(dirs, list) else []
+
+    def set_tool_dirs(self, dirs: list[str]) -> None:
+        """Persist the folders to scan for `fasttool.json` manifests."""
+        self._store.write(TOOL_DIRS_KEY, {"dirs": list(dirs)})

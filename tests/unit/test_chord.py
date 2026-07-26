@@ -111,6 +111,17 @@ def test_migrate_legacy_chord_noop_when_saved_chord_is_already_the_default():
     assert keymap_state.effective().chords_for("open_palette") == ("Ctrl+Alt+Space",)
 
 
+def test_settings_store_tool_dirs_defaults_to_empty():
+    store = SettingsStore(MemoryStore())
+    assert store.get_tool_dirs() == []
+
+
+def test_settings_store_tool_dirs_round_trip():
+    store = SettingsStore(MemoryStore())
+    store.set_tool_dirs(["D:/GIT/BenjaminKobjolke/FastTools/FastKeyboardMouse"])
+    assert store.get_tool_dirs() == ["D:/GIT/BenjaminKobjolke/FastTools/FastKeyboardMouse"]
+
+
 def test_migrate_legacy_chord_noop_when_open_palette_already_customized():
     store = MemoryStore()
     settings = SettingsStore(store)
