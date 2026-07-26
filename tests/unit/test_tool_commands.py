@@ -9,8 +9,10 @@ unit-tested either (see tests/unit/test_hotkey_manager.py).
 
 import json
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from command_palette import MemoryStore
+from fasttool_host import ToolBridge
 
 from config.settings_store import SettingsStore
 from core.tool_commands import build_tool_commands
@@ -83,6 +85,40 @@ def test_tool_dir_without_manifest_is_skipped(tmp_path: Path):
     commands, _bridge = build_tool_commands(settings_store)
 
     assert commands == []
+
+
+def test_run_fires_with_yield_chords_read_fresh_from_the_provider(tmp_path: Path):
+    # yield_chords must be called at fire time, not baked in at build time --
+    # a rebind between builds (there is none here) or between two fires of
+    # the same command must be reflected on the very next fire.
+    tool_dir = tmp_path / "FastKeyboardMouse"
+    _write_manifest(tool_dir, VALID_MANIFEST)
+    settings_store = SettingsStore(MemoryStore())
+    settings_store.set_tool_dirs([str(tool_dir)])
+    fake_bridge = MagicMock(spec=ToolBridge)
+    fake_bridge.load.return_value = ToolBridge().load([tool_dir])
+    chords = ["alt+q"]
+
+    commands, _bridge = build_tool_commands(
+        settings_store, fake_bridge, yield_chords=lambda: chords
+    )
+    commands[0].run()
+
+    fake_bridge.fire.assert_called_once_with("fastkeyboardmouse", "toggle", yield_chords=["alt+q"])
+
+
+def test_run_passes_none_when_no_yield_chords_provider_given(tmp_path: Path):
+    tool_dir = tmp_path / "FastKeyboardMouse"
+    _write_manifest(tool_dir, VALID_MANIFEST)
+    settings_store = SettingsStore(MemoryStore())
+    settings_store.set_tool_dirs([str(tool_dir)])
+    fake_bridge = MagicMock(spec=ToolBridge)
+    fake_bridge.load.return_value = ToolBridge().load([tool_dir])
+
+    commands, _bridge = build_tool_commands(settings_store, fake_bridge)
+    commands[0].run()
+
+    fake_bridge.fire.assert_called_once_with("fastkeyboardmouse", "toggle", yield_chords=None)
 
 
 def test_reloading_with_the_same_bridge_reuses_it_not_a_fresh_one(tmp_path: Path):

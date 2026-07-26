@@ -29,7 +29,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 from app_logger import AppLogger  # noqa: E402
 from config.settings_store import APP_NAME, DEFAULT_BINDINGS, SettingsStore  # noqa: E402
 from core.hotkey_bridge import HotkeyBridge  # noqa: E402
-from core.hotkey_manager import HotkeyManager  # noqa: E402
+from core.hotkey_manager import HotkeyManager, winhotkeys_bindings  # noqa: E402
 from core.single_instance import SingleInstance  # noqa: E402
 from core.tool_commands import build_tool_commands  # noqa: E402
 from gui.tray import build_tray  # noqa: E402
@@ -93,6 +93,15 @@ def main() -> None:
         # main-loop iteration so it actually terminates app.exec().
         QTimer.singleShot(0, app.quit)
 
+    def yield_chords() -> list[str]:
+        """The chords the host currently has registered globally, neutral
+        format -- sent alongside every action fired at a tool so it can yield
+        them back to the host while active (see CONTRACT.md's "Yielding
+        hotkeys while a tool is active" and ``core/tool_commands.py``).
+        Read fresh on every fire, not cached, so a rebind takes effect on the
+        very next toggle."""
+        return sorted({chord for chord, _ in winhotkeys_bindings(keymap_state.effective())})
+
     def refresh_tool_commands() -> None:
         """Rebuild the tool.* commands after ``settings_store``'s tool_dirs
         changed (see "Tools: manage folders"). Mutates ``commands``/``dispatch``
@@ -101,7 +110,7 @@ def main() -> None:
         ``palette``'s own reference -- sees the update without being touched.
         Reuses ``tool_bridge`` rather than building a new one, so instances it
         already launched stay tracked."""
-        new_tool_commands, _ = build_tool_commands(settings_store, tool_bridge)
+        new_tool_commands, _ = build_tool_commands(settings_store, tool_bridge, yield_chords)
         commands[:] = [
             c for c in commands if not c.command_id.startswith("tool.")
         ] + new_tool_commands
@@ -120,7 +129,7 @@ def main() -> None:
     # One command per action declared by an external tool's fasttool.json --
     # see FastCommandCenter-tool-bridge/CONTRACT.md. tool_bridge owns any
     # tool instances it had to launch; torn down alongside the app below.
-    tool_commands, tool_bridge = build_tool_commands(settings_store)
+    tool_commands, tool_bridge = build_tool_commands(settings_store, yield_chords=yield_chords)
     commands.extend(tool_commands)
     dispatch = {command.command_id: command.run for command in commands}
 

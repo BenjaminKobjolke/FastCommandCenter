@@ -61,6 +61,36 @@ tool directly and it behaves exactly as it always has.
   palette fires an action (found via `FindWindow`, not launched by this
   bridge) is left alone.
 
+**A tool's `fasttool.json` `launch.exe` names a compiled binary, not its
+source.** `ToolBridge` only ever launches that exe — it never touches the
+tool's `.ahk`/source files. After editing a tool's source (e.g.
+FastKeyboardMouse's `.ahk` files), rebuild it with the tool's own build
+script (`tools\build.bat` in FastKeyboardMouse) before testing through FCC,
+or the exe silently keeps its old behavior. This is easy to misdiagnose: the
+stale exe still launches fine (tray icon and all) via `find_window`/`_launch`
+— only its *behavior* is stale — so it looks like the source change had no
+effect rather than "forgot to rebuild."
+
+## Keeping this app's global hotkeys working while a tool is active
+
+`core/tool_commands.py`'s `build_tool_commands()` takes an optional
+`yield_chords` callable; `fastcommandcenter.py` passes it a closure
+(`yield_chords()`) that reads `winhotkeys_bindings(keymap_state.effective())`
+fresh on every call. Every `bridge.fire(...)` call carries the current set of
+neutral-format chords this app has registered — not just the one that fired —
+so a tool being driven by one chord (e.g. a toggle) also learns about every
+other chord this app owns.
+
+This exists because this app's hotkeys use Win32 `RegisterHotKey`, which sits
+*after* a low-level keyboard hook in Windows' input chain. A tool that
+installs its own hook while active (FastKeyboardMouse's AutoHotkey `*`-
+wildcard hotkeys, which match a key regardless of held modifiers) can swallow
+a chord this app owns before `RegisterHotKey` ever sees it — e.g. `Alt+Q`
+bound to FastKeyboardMouse's own toggle got eaten by its `*q` (center cursor)
+binding once active, so the toggle could only be fired again from the palette
+itself. See `FastCommandCenter-tool-bridge/CONTRACT.md`'s "Yielding hotkeys
+while a tool is active" for the wire format and what a tool does with it.
+
 ## Orphaned hotkeys
 
 Removing a tool folder while one of its actions still has a hotkey bound

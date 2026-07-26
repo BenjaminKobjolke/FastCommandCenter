@@ -39,6 +39,15 @@ as above applies. **See `docs/EXTERNAL_TOOLS.md`** for the full breakdown —
 how this plugs into `core/tool_commands.py`/`palette/commands.py`, and where
 a change belongs.
 
+**After changing an external tool's source (e.g. FastKeyboardMouse's `.ahk`
+files), rebuild its exe before testing.** `fasttool.json`'s `launch.exe`
+names a compiled binary — FCC launches that exe, never the source, so an AHK
+edit is silently inert until the tool's own build script
+(`tools\build.bat` in FastKeyboardMouse) is re-run. The tool still launches
+fine on a stale exe (tray icon and all), so this reads as "the fix didn't
+work" rather than "forgot to rebuild" — check the exe's timestamp against the
+source before chasing a phantom bug.
+
 ## Commands
 
 ### Setup & Installation
