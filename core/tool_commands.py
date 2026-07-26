@@ -6,6 +6,13 @@ declared tool action becomes one ordinary Command -- bindable in the palette
 and by a global hotkey, no different from any built-in command. The Command's
 `run` just fires the action at the tool; `fasttool_host` owns finding or
 launching it.
+
+Each manifest also gets one navigable "<name>: settings" Command
+(CONTRACT.md's "Settings protocol (v2)") -- picking it in an already-open
+palette drills into core/tool_settings_editor.py's live editor. Like
+`Appearance: ...` and `Tools: manage folders` (palette/commands.py), this is
+drill-in-only -- no direct-hotkey-when-closed support like `settings` has,
+see that module's `_NO_RUN`.
 """
 
 from __future__ import annotations
@@ -14,9 +21,13 @@ from collections.abc import Callable
 from pathlib import Path
 
 from command_palette import Command
+from command_palette.dialog import FilterListDialog
 from fasttool_host import ToolAction, ToolBridge
 
 from config.settings_store import SettingsStore
+from core.tool_settings_editor import open_tool_settings_editor_in_palette
+
+_NO_RUN: Callable[[], None] = lambda: None  # noqa: E731 — navigable commands never run() directly
 
 
 def _make_run(
@@ -32,13 +43,25 @@ def _make_run(
     return run
 
 
+def _make_on_navigate(
+    bridge: ToolBridge, tool_id: str, tool_name: str
+) -> Callable[[FilterListDialog], None]:
+    # Same late-binding fix as _make_run's: fixes tool_id/tool_name per-call
+    # rather than closing over a comprehension's loop variable.
+    def on_navigate(dialog: FilterListDialog) -> None:
+        open_tool_settings_editor_in_palette(dialog, tool_id, tool_name, bridge)
+
+    return on_navigate
+
+
 def build_tool_commands(
     settings_store: SettingsStore,
     bridge: ToolBridge | None = None,
     yield_chords: Callable[[], list[str]] | None = None,
 ) -> tuple[list[Command], ToolBridge]:
     """Load every fasttool.json under ``settings_store.get_tool_dirs()`` and
-    return one Command per declared action, plus the ToolBridge that fires
+    return one Command per declared action plus one navigable "<name>:
+    settings" Command per tool, plus the ToolBridge that fires/describes/sets
     them. Callers own the bridge's lifecycle -- call ``bridge.shutdown()`` on
     app quit to terminate any tool instances it launched.
 
@@ -56,7 +79,7 @@ def build_tool_commands(
     """
     bridge = bridge if bridge is not None else ToolBridge()
     actions = bridge.load([Path(tool_dir) for tool_dir in settings_store.get_tool_dirs()])
-    commands = [
+    action_commands = [
         Command(
             command_id=action.command_id,
             title=action.title,
@@ -64,4 +87,13 @@ def build_tool_commands(
         )
         for action in actions
     ]
-    return commands, bridge
+    settings_commands = [
+        Command(
+            command_id=f"tool.{manifest.id}.settings",
+            title=f"{manifest.name}: settings",
+            run=_NO_RUN,
+            on_navigate=_make_on_navigate(bridge, manifest.id, manifest.name),
+        )
+        for manifest in bridge.manifests
+    ]
+    return action_commands + settings_commands, bridge

@@ -91,6 +91,143 @@ binding once active, so the toggle could only be fired again from the palette
 itself. See `FastCommandCenter-tool-bridge/CONTRACT.md`'s "Yielding hotkeys
 while a tool is active" for the wire format and what a tool does with it.
 
+## Settings protocol (v2): editing a tool's own settings
+
+Beyond firing actions, the palette can also edit a tool's **own** settings —
+its internal shortcuts, tunables, colors, flags (e.g. FastKeyboardMouse's
+`FastKeyboardMouse.ini`) — through `<name>: settings`, a navigable command
+built alongside the action commands. The defining constraint, and why this
+needed a real protocol addition rather than just another action: **this app
+never reads or writes a tool's config file.** The tool remains the sole
+owner of how its settings are persisted and applied; this app only ever sees
+typed values over IPC. Full wire format: `FastCommandCenter-tool-bridge/CONTRACT.md`'s
+"Settings protocol (v2)" section.
+
+- **Reply channel.** Action-fire (v1) is one-way, host → tool. Settings needs
+  a reply — a tool's current values, and confirmation after a change — so
+  `fasttool_host.receiver.SettingsReceiver` runs a second hidden window,
+  `FastToolIPC::host`, symmetric with a tool's own `FastToolIPC::<id>`
+  window. A tool's client shim resolves it via `FindWindow` and sends its
+  `snapshot` there, the same primitive and direction the host already uses
+  to reach a tool, just reversed. `ToolBridge` owns one `SettingsReceiver`
+  instance (created alongside its process-tracking dict, torn down in
+  `shutdown()`) and re-exposes its decoded replies as `settings_received`, a
+  Qt signal — a tool's reply arrives asynchronously, on `SettingsReceiver`'s
+  own background thread, and crosses to the GUI thread via a queued
+  connection the same way `core/hotkey_bridge.py` already does for winhotkeys.
+- **`ToolBridge.describe_settings(tool_id)`** / **`ToolBridge.set_setting(tool_id, setting_id, value)`**
+  (`fasttool_host.bridge`) are the send side — find-or-launch the tool (same
+  as `fire()`), then send a `describe` or `set` message. Both are
+  fire-and-forget; the reply is whatever the next matching `settings_received`
+  signal carries, not a return value.
+- **`ToolBridge.manifests`** exposes every loaded `ToolManifest`, not just the
+  derived `ToolAction`s `load()` returns — `core/tool_commands.py` needs a
+  tool's id *and* name to build its `<name>: settings` command, and reusing
+  this typed model beats re-deriving them by parsing `ToolAction.title`.
+- **`core/tool_commands.py`**'s `build_tool_commands()` now returns one
+  additional navigable `Command` per manifest (`command_id` =
+  `tool.<id>.settings`, `on_navigate` set, `run` a no-op — same
+  drill-in-only shape as `Appearance: …`/`manage_tool_folders`, not the
+  direct-hotkey-when-closed special case `settings` has). It's still filtered
+  by `refresh_tool_commands()`'s existing `command_id.startswith("tool.")`
+  check without any changes there — the settings command's id shares that
+  prefix.
+- **`core/tool_settings_editor.py`** is the actual editor: a class holding
+  the live `FilterListDialog` + tool identity + the `ToolBridge`, modeled on
+  `python-command-palette`'s own `_LevelShortcutEditor`
+  (`shortcut_editor_inline.py`) — same "list → type-appropriate editor" shape,
+  reusing the same `push_level`/`push_capture_level`/`refresh_current_level`
+  primitives. Differs from the shortcut editor in one structural way: every
+  step there is synchronous (a `KeymapState` edit finishes before the next
+  line runs), but a settings `describe`/`set` reply arrives *later*, over
+  IPC — so `_ToolSettingsEditor` connects to `bridge.settings_received` fresh
+  per outstanding request and disconnects as soon as it's used, rather than
+  holding one connection for the editor's whole lifetime. A 3-second timeout
+  degrades to a "Tool didn't respond" row if no reply ever arrives (an older
+  tool, or one simply not running).
+- **Per-type editors**, all reusing existing library primitives — no new UI
+  code in `python-command-palette` itself: `shortcut` → the same inline
+  chord-capture overlay `Configure keyboard shortcuts` uses;
+  `int`/`bool`/`enum` → a pushed value-list level, same shape as
+  `Appearance: …`; `color` → the native `QColorDialog`, the same "one
+  unavoidable exception to staying inside the palette" the appearance color
+  pickers already use. Picking a value-list entry `pop_level()`s back to the
+  settings list *before* calling `set_setting` — the eventual snapshot reply
+  refreshes "the current level", so it must already be back on the settings
+  list by the time that reply arrives, not still on the value-list level that
+  was only ever meant to be transient.
+- **A tool's client shim** (`FastCommandCenter-tool-bridge/client/…`)
+  implements the tool half: answering `describe` with a `snapshot`, applying
+  a `set` (persist + reload + re-snapshot). FastKeyboardMouse's is
+  `lib/PaletteSettings.ahk` — one `FastToolPalette_AddSetting(...)` call per
+  exposed setting, binding a generic per-type getter/setter to that setting's
+  global variable name (AHK v1 has no closures; `Func(...).Bind(varName)`
+  stands in for one). Neutral chord ↔ AHK hotkey-syntax translation
+  (`FastToolPalette_NeutralToNative`/`NativeToNeutral`, `FastToolPalette.ahk`)
+  reuses the same neutral format `yield_chords` already established.
+
+## Debugging the settings protocol
+
+Two tools, for the two sides of the wire, born from actually chasing "Tool
+didn't respond" bugs — both real, both silent (no exception the palette
+could show, no window that failed to open):
+
+- **`tools/diag_settings.py`** (this repo) — exercises `ToolBridge.describe_settings()`
+  against a real tool directly, bypassing the palette UI entirely:
+
+  ```
+  uv run python tools/diag_settings.py "D:\path\to\ToolFolder"
+  ```
+
+  Prints each stage (receiver window creation, manifest load, `describe`
+  sent, snapshot received or not) and exits non-zero on the first failure.
+  Its main value: telling apart "the wire protocol itself is broken" from
+  "something in the palette's UI wiring is broken" — if this script gets a
+  snapshot but the palette still shows "Tool didn't respond", the bug is in
+  `core/tool_settings_editor.py`/`core/tool_commands.py`, not the protocol.
+  Run with the tool **not** already running (it launches one, same as the
+  palette would) and rerun after any rebuild — a stale already-running
+  instance answers with whatever code it had loaded at launch, not what's on
+  disk now.
+
+- **`palette_debug.log`** — an AHK-side debug log, written next to a tool's
+  exe by `FastToolPalette_DebugLog()` (`FastToolPalette.ahk`,
+  `FastCommandCenter-tool-bridge/client/ahk` is the source of truth, vendor
+  the copy into the tool's `lib/` the same as the rest of that file). One
+  line per stage of the round trip: `OnCopyData` (the raw `dwData`/`cbData`
+  received), `HandleSettingsMessage` (the parsed `kind`), `SendSnapshot`
+  (how many settings, JSON length), `SendToHost` (whether the host's
+  `FastToolIPC::host` window was found, and the raw `SendMessageW` result).
+  A caught exception inside the tool's own getter/setter code logs too,
+  labeled with the AHK line number. Always-on, not gated behind a flag —
+  this protocol crosses two processes and a Win32 IPC boundary, exactly
+  where a MsgBox can't help. Delete the file yourself if it grows large;
+  there's no rotation.
+
+Two real, non-obvious bugs got found this way (both in the generic
+`FastToolPalette.ahk` shim, so any AHK-based tool using it was affected):
+
+1. `DllCall("FindWindow", "Str", "", "Str", "FastToolIPC::host", "Ptr")` —
+   `"Str", ""` is an **empty string** for the class-name parameter, not
+   NULL. No window has an empty class name, so this silently always
+   returned 0. Fix: `"Ptr", 0` for a true NULL.
+2. Even with a correct hwnd in hand, the `SendMessage` **command** (as
+   opposed to a raw `DllCall`) re-resolves its `WinTitle` target
+   (`ahk_id %hostHwnd%`) through AHK's own window-matching engine — which
+   respects `DetectHiddenWindows` (off by default). The host's reply window
+   is hidden (same as every `FastToolIPC::*` window in this whole system),
+   so the command silently failed to target it even with the right hwnd.
+   Fix: `DllCall("SendMessageW", "Ptr", hostHwnd, ...)` directly — bypasses
+   AHK's window-matching entirely, mirrors exactly how the host's own
+   `fasttool_host.copydata.send_action`/`send_settings` already send (raw
+   `SendMessageW` against an hwnd, no title matching).
+
+Both were invisible from the palette (just an eventual "Tool didn't
+respond") and invisible to `diag_settings.py` alone (it only proves *this
+side's* window exists and a message was sent, not that the *other* side's
+send actually landed) — the AHK-side log was what pinned down exactly which
+DllCall was failing and why.
+
 ## Orphaned hotkeys
 
 Removing a tool folder while one of its actions still has a hotkey bound
@@ -105,20 +242,28 @@ Same judgment call as the `python-command-palette` dependency (see the top
 of `CLAUDE.md`):
 
 - **`FastCommandCenter-tool-bridge`** — the wire protocol itself
-  (`CONTRACT.md`), the AHK/Python client shims other tools vendor/depend on,
-  `fasttool_host`'s manifest parsing and `ToolBridge` (find-or-launch,
-  `WM_COPYDATA` send/receive, `QProcess` lifecycle) — anything usable by
-  another PySide6 host or another tool, not specific to FastCommandCenter's
-  own command list.
-- **This repo** — `core/tool_commands.py`, the `manage_tool_folders` command,
-  `SettingsStore.get_tool_dirs()`/`set_tool_dirs()`, anything that calls into
-  `fasttool_host`'s public API rather than living inside it.
+  (`CONTRACT.md`, both action-fire and the settings protocol), the AHK/Python
+  client shims other tools vendor/depend on, `fasttool_host`'s manifest
+  parsing, `ToolBridge` (find-or-launch, `WM_COPYDATA` send/receive,
+  `QProcess` lifecycle, `describe_settings`/`set_setting`/`settings_received`),
+  the `SettingsReceiver`/`FastToolIPC::host` window, the `ToolSetting`/
+  `ToolSettings` models — anything usable by another PySide6 host or another
+  tool, not specific to FastCommandCenter's own command list.
+- **This repo** — `core/tool_commands.py`, `core/tool_settings_editor.py`,
+  the `manage_tool_folders` command, `SettingsStore.get_tool_dirs()`/
+  `set_tool_dirs()`, anything that calls into `fasttool_host`'s public API
+  rather than living inside it.
+- **A tool's own repo** (e.g. `FastKeyboardMouse`) — which of its settings it
+  declares editable, how it persists them (its own ini/config format,
+  entirely its call), and what "reload" means for it.
 
 If it's ambiguous, ask before implementing rather than guessing.
 
 ## See also
 
-- `docs/COMMAND_PALETTE.md`'s "External tool commands" section — the
-  user-facing behavior (what shows up in the palette, how binding works).
+- `docs/COMMAND_PALETTE.md`'s "External tool commands" and "External tool
+  settings" sections — the user-facing behavior (what shows up in the
+  palette, how binding and settings-editing work).
 - `docs/SETTINGS_STORAGE.md` — the `tool_dirs` persisted shape.
-- `FastCommandCenter-tool-bridge/CONTRACT.md` — the wire protocol.
+- `FastCommandCenter-tool-bridge/CONTRACT.md` — the wire protocol, including
+  "Settings protocol (v2)".

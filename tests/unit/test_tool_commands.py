@@ -40,6 +40,9 @@ def test_no_tool_dirs_configured_yields_no_commands():
 
 
 def test_one_command_per_declared_action(tmp_path: Path):
+    # Plus one navigable "<name>: settings" command per tool (CONTRACT.md's
+    # "Settings protocol (v2)") -- see test_one_settings_command_per_tool
+    # below for that command's own construction.
     tool_dir = tmp_path / "FastKeyboardMouse"
     _write_manifest(tool_dir, VALID_MANIFEST)
     settings_store = SettingsStore(MemoryStore())
@@ -47,7 +50,10 @@ def test_one_command_per_declared_action(tmp_path: Path):
 
     commands, _bridge = build_tool_commands(settings_store)
 
-    assert [c.command_id for c in commands] == ["tool.fastkeyboardmouse.toggle"]
+    assert [c.command_id for c in commands] == [
+        "tool.fastkeyboardmouse.toggle",
+        "tool.fastkeyboardmouse.settings",
+    ]
     assert commands[0].title == "Fast Keyboard Mouse: Toggle mouse mode"
 
 
@@ -73,6 +79,7 @@ def test_multi_action_tool_yields_one_command_each(tmp_path: Path):
     assert {c.command_id for c in commands} == {
         "tool.fasttextsuggester.capture",
         "tool.fasttextsuggester.suggestion",
+        "tool.fasttextsuggester.settings",
     }
 
 

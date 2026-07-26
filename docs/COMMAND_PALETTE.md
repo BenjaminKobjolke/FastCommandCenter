@@ -15,6 +15,13 @@ app *uses* that library. For the library's own reference, see its
 hotkey (`core/hotkey_manager.py` + `core/hotkey_bridge.py`) and the tray's
 `Open palette` action both call this same closure — one code path.
 
+Because this app is never Windows' foreground process and the library's
+dialog does no activation of its own, `open_palette()` also schedules
+`core/window_activation.py`'s `force_foreground()` (via `QTimer.singleShot`)
+right before `palette.open()`, so a hotkey fired from cold start still brings
+the dialog to the front — not just the tray path, which was already
+foreground. `open_shortcuts_config()` does the same.
+
 ## The command list
 
 Built once by `build_commands()` in `palette/commands.py`:
@@ -81,9 +88,40 @@ actions become visible the next time the palette is *opened*, and start with
 no hotkey bound — bind one through `Configure keyboard shortcuts` below, same
 as any other command.
 
+### External tool settings
+
+Beyond its actions, each configured tool also carries one navigable
+`<name>: settings` command — e.g. "Fast Keyboard Mouse: settings"
+(`command_id` = `tool.fastkeyboardmouse.settings`). Picking it drills into
+that tool's **own** settings — its internal keyboard shortcuts, tunables,
+colors, flags — the same in-palette way `Appearance: …` drills into a value
+list. This is not this palette's own appearance or hotkeys; it's whatever the
+tool itself declares. The row list opens on "Loading settings…" while the
+tool is asked over IPC, then fills in with one row per setting
+(`"<label>: <current value>"`); picking a row opens the editor for that
+setting's type:
+
+- A **shortcut** setting opens the same inline "press a shortcut" capture
+  `Configure keyboard shortcuts` uses.
+- **int**, **bool**, and **enum** settings drill into a value list, exactly
+  like an `Appearance: …` command.
+- A **color** setting opens the native color wheel (the same "one
+  unavoidable exception to staying inside the palette" the folder/color
+  pickers use).
+
+Picking a value sends it to the tool, which persists it and reloads whatever
+depends on it *itself* — **this app never reads or writes the tool's config
+file**, only the typed value crosses the wire. The row list refreshes to the
+tool's actual post-apply state once it replies, so a value the tool clamped
+or rejected shows correctly rather than trusting what was picked. If a
+configured tool doesn't support this (an older version, or a tool with
+nothing to expose), the list shows "Tool didn't respond — is it running?"
+rather than hanging or erroring — its actions still work normally either way.
+
 See **`docs/EXTERNAL_TOOLS.md`** for how this is implemented (the
-`fasttool_host` bridge, the in-place command-list refresh, the repo split)
-and `FastCommandCenter-tool-bridge/CONTRACT.md` for the wire protocol.
+`fasttool_host` bridge, the in-place command-list refresh, the settings
+protocol, the repo split) and `FastCommandCenter-tool-bridge/CONTRACT.md` for
+the wire protocol.
 
 ## Configure keyboard shortcuts
 
