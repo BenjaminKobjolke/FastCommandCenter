@@ -117,6 +117,9 @@ or rejected shows correctly rather than trusting what was picked. If a
 configured tool doesn't support this (an older version, or a tool with
 nothing to expose), the list shows "Tool didn't respond — is it running?"
 rather than hanging or erroring — its actions still work normally either way.
+FastTool-only settings, such as `Hide tray icon in Command Center mode`, are
+still owned by the tool; they are simply ignored or treated differently when
+the same executable is run standalone instead of through `--palette`.
 
 See **`docs/EXTERNAL_TOOLS.md`** for how this is implemented (the
 `fasttool_host` bridge, the in-place command-list refresh, the settings

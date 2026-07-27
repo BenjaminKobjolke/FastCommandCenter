@@ -24,6 +24,36 @@ hotkey, waits for an action over `WM_COPYDATA`); no flag = the tool's
 original, fully standalone behavior — nothing changes there. Run the same
 tool directly and it behaves exactly as it always has.
 
+## Making a tool FCC-compatible
+
+Use `D:\GIT\BenjaminKobjolke\FastTools\FastCommandCenter-tool-bridge\CONTRACT.md`
+as the source of truth for the wire format and manifest schema. From a tool
+repo, the practical checklist is:
+
+1. Vendor or depend on the bridge client shim for the tool's runtime
+   (`FastCommandCenter-tool-bridge/client/...`; AHK tools usually vendor the
+   AHK shim into `lib/`).
+2. Add a `fasttool.json` next to the tool executable. It must declare the
+   stable tool id, display name, IPC window title, launch executable, launch
+   args including `--palette`, and one action id/label per command FCC should
+   expose.
+3. In the tool startup, parse `--palette` through the client shim before
+   registering global hotkeys. Palette mode must create the IPC window and
+   skip the tool's own OS-global hotkey registration; standalone mode keeps
+   the original behavior.
+4. Map each `fasttool.json` action id to the tool's internal command label or
+   handler so FCC can send `WM_COPYDATA` action messages.
+5. If the tool installs active-mode keyboard hooks or wildcard hotkeys, apply
+   the bridge's yielded host chords while the tool is active so FCC's own
+   hotkeys keep working.
+6. Optionally expose the tool's own settings through the settings protocol.
+   The tool remains the owner of its INI/config persistence and reload/apply
+   behavior; FCC only displays typed values and sends selected updates.
+7. For compiled tools, rebuild the executable after source changes. FCC
+   launches the `fasttool.json` executable, not the source file.
+8. In FCC, add the tool folder through `Tools: manage folders`, then bind the
+   generated action commands through `Configure keyboard shortcuts`.
+
 ## How it plugs into this app
 
 - **`SettingsStore.get_tool_dirs()` / `set_tool_dirs()`** (`config/settings_store.py`)
@@ -165,6 +195,18 @@ typed values over IPC. Full wire format: `FastCommandCenter-tool-bridge/CONTRACT
   stands in for one). Neutral chord ↔ AHK hotkey-syntax translation
   (`FastToolPalette_NeutralToNative`/`NativeToNeutral`, `FastToolPalette.ahk`)
   reuses the same neutral format `yield_chords` already established.
+
+### FastTool-only settings
+
+Some tool settings are meaningful only when the executable is launched by
+FastCommandCenter with `--palette`. The current convention is that these stay
+tool-owned, live in the tool's own INI under `[FastTool]`, and are exposed
+through the same settings protocol as any other tool setting. For example,
+FastKeyboardMouse and FastWindowLayout both expose `HideTrayIcon` as
+`Hide tray icon in Command Center mode`: palette-managed launches hide or
+show their own tray icon from that value, while standalone launches keep the
+normal tray icon behavior. The host does not special-case these settings or
+write the INI; it only displays the bool row and sends the selected value.
 
 ## Debugging the settings protocol
 
