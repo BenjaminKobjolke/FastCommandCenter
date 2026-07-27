@@ -12,7 +12,7 @@ own `appearance` key.
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, fields
 
 from command_palette import DefaultPair, JsonStore, KeymapState, PaletteConfig, Store
 from command_palette.store import default_state_path
@@ -25,15 +25,13 @@ TOOL_DIRS_KEY = "tool_dirs"
 OPEN_PALETTE_COMMAND_ID = "open_palette"
 DEFAULT_BINDINGS: list[DefaultPair] = [("Ctrl+Alt+Space", OPEN_PALETTE_COMMAND_ID)]
 
-# Fields the settings dialog lets the user tune; open_chord is palette-internal
-# and frameless is fixed by this app, so both are excluded from persistence.
-_APPEARANCE_FIELDS = (
-    "width_pct",
-    "height_pct",
-    "font_pt",
-    "opacity_pct",
-    "active_fg",
-    "inactive_fg",
+# open_chord is palette-internal and frameless is fixed by this app, so both
+# are excluded from persistence; every other PaletteConfig field is derived
+# (self-describing) rather than hardcoded, so a new tunable field picks up
+# persistence automatically.
+_NON_PERSISTED_APPEARANCE_FIELDS = frozenset({"frameless", "open_chord"})
+_APPEARANCE_FIELDS = tuple(
+    f.name for f in fields(PaletteConfig) if f.name not in _NON_PERSISTED_APPEARANCE_FIELDS
 )
 
 
