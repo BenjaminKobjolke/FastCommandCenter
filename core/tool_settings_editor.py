@@ -21,7 +21,7 @@ from command_palette.dialog import FilterListDialog
 from fasttool_host import ToolBridge, ToolSetting, ToolSettings
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import QColorDialog
+from PySide6.QtWidgets import QColorDialog, QFileDialog
 
 _DESCRIBE_TIMEOUT_MS = 3000
 _NO_RESPONSE_TITLE = "Tool didn't respond -- is it running?"
@@ -158,6 +158,18 @@ class _ToolSettingsEditor:
         if picked.isValid():
             self._apply(setting.id, picked.name())
 
+    def _edit_string(self, setting: ToolSetting) -> None:
+        self._dialog.push_text_input_level(
+            lambda value: self._apply(setting.id, value),
+            title=setting.label,
+            initial_text=str(setting.value or ""),
+        )
+
+    def _edit_directory(self, setting: ToolSetting) -> None:
+        picked = QFileDialog.getExistingDirectory(None, setting.label, str(setting.value or ""))
+        if picked:
+            self._apply(setting.id, picked)
+
     def _push_value_level(self, setting: ToolSetting, rows: list[ListEntry]) -> None:
         def on_choose(entry: ListEntry) -> None:
             # Pop back to the settings list BEFORE applying: the eventual
@@ -182,6 +194,8 @@ _EDITORS = {
     "bool": _ToolSettingsEditor._edit_bool,
     "enum": _ToolSettingsEditor._edit_enum,
     "color": _ToolSettingsEditor._edit_color,
+    "string": _ToolSettingsEditor._edit_string,
+    "directory": _ToolSettingsEditor._edit_directory,
 }
 
 

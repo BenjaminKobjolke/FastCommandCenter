@@ -120,6 +120,15 @@ more single "the" hotkey or emergency-only dialog; there is no
 persisted shape and the one-time migration off the old single-hotkey key, and
 the library's `docs/NAVIGATION.md` for the underlying push/pop/capture API.
 
+**Bindable text-provider commands must implement both command entry paths.**
+Palette selection invokes `Command.on_navigate(dialog)` on an existing
+dialog; global hotkey dispatch invokes `Command.run()` and has no dialog to
+reuse. The `run` callback must open the palette with
+`navigate_to=command_id`, preserving the previously focused window as the
+paste target. Any text-provider integration must include a unit test that
+calls the generated command's `run()` and asserts that direct navigation;
+testing only palette selection does not exercise shortcut dispatch.
+
 ### Design principle: the palette is the single OS-global hotkey authority, other tools defer to it
 
 An external FastTools app (FastKeyboardMouse, etc.) can be configured to

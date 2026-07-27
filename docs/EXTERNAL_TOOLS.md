@@ -49,10 +49,17 @@ repo, the practical checklist is:
 6. Optionally expose the tool's own settings through the settings protocol.
    The tool remains the owner of its INI/config persistence and reload/apply
    behavior; FCC only displays typed values and sends selected updates.
-7. For compiled tools, rebuild the executable after source changes. FCC
+7. If the tool suggests text, declare a `text_providers` entry and register
+   its query callback through the client shim. Provider commands are
+   bindable, so FCC must support both command entry paths described below.
+8. For compiled tools, rebuild the executable after source changes. FCC
    launches the `fasttool.json` executable, not the source file.
-8. In FCC, add the tool folder through `Tools: manage folders`, then bind the
-   generated action commands through `Configure keyboard shortcuts`.
+9. In FCC, add the tool folder through `Tools: manage folders`, then bind the
+   generated action or text-provider commands through `Configure keyboard
+   shortcuts`.
+10. Verify every exposed workflow from both the open palette and its assigned
+    global shortcut. For a text provider, also select a result and confirm it
+    pastes into the window focused before FCC opened.
 
 ## How it plugs into this app
 
@@ -69,6 +76,15 @@ repo, the practical checklist is:
   the shortcut editor, fireable by hotkey or from the palette, dispatched the
   same way. The function accepts an existing `ToolBridge` so a reload doesn't
   orphan a bridge's already-tracked launched-process state.
+- **Text-provider commands have two independent FCC entry paths.** Selecting
+  one inside an open palette calls `Command.on_navigate(dialog)`, which pushes
+  the provider onto that dialog. A global hotkey never calls
+  `on_navigate`; it dispatches `Command.run()`, which must open FCC with
+  `palette.open(navigate_to=command_id)`. Implementing only `on_navigate`
+  makes palette selection work while every assigned shortcut silently does
+  nothing. Keep the unit test in `tests/unit/test_tool_commands.py` that calls
+  the generated provider command's `run()` and asserts its command id was
+  passed to FCC's provider opener.
 - **`Tools: manage folders`** (`palette/commands.py`, navigable) is how a
   folder gets added (native folder picker) or removed (select its "Remove:
   `<path>`" row). Either path calls `fastcommandcenter.py`'s
@@ -277,6 +293,40 @@ leaves an orphaned `command_id` in the keymap. Firing it becomes a harmless
 no-op (`dispatch.get(command_id, lambda: None)()`) — the same graceful-orphan
 behavior the shortcut editor already has for a manually cleared binding.
 Nothing cleans up the orphaned keymap entry automatically.
+
+## Text provider protocol (v3)
+
+Text providers are dynamic, navigable tool commands rather than fixed actions.
+`fasttool_host.ToolBridge.query_text()` sends the provider/session/request/query
+tuple and emits typed `ToolTextResults` replies. FCC's adapter rejects stale
+request ids and maps the newest rows into a pushed palette provider. The tool
+owns matching and returns resolved insertion text; FCC owns focus restoration,
+clipboard assignment, and `Ctrl+V`.
+
+Tools may emit `text_provider_activation_requested`, allowing an asynchronous
+workflow such as OCR to reopen FCC directly at a declared provider. The bridge
+contract and Python client implementation live in the sibling bridge repo;
+the nested-provider UI primitive lives in `python-command-palette`; only their
+composition belongs in FCC.
+
+External settings also support `string` (inline palette text entry) and
+`directory` (native directory picker) in addition to the v2 setting types.
+
+### Text-provider verification matrix
+
+Before considering a new provider integrated, verify all of these paths:
+
+| Entry path | Expected behavior |
+|---|---|
+| Select provider in an open palette | Pushes the provider level and accepts typed queries |
+| Fire its assigned global shortcut | Opens FCC directly at the provider level |
+| Choose a result from either path | Closes FCC and pastes into the previously focused window |
+| Query while the tool is not running | FCC launches it and displays its first correlated reply |
+| Query while the tool is already running | FCC reuses it and displays the newest correlated reply |
+| Tool requests activation asynchronously | FCC waits for any active modal to close, then opens the provider |
+
+The first two rows are intentionally separate tests: palette selection uses
+`on_navigate`, while shortcut dispatch uses `run`.
 
 ## Repo split: where does a change belong?
 

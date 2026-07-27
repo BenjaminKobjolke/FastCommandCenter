@@ -51,6 +51,11 @@ class _FakeDialog:
     def push_capture_level(self, on_chord, *, title="", prompt="", detected_fmt=""):
         self.captures.append({"on_chord": on_chord, "title": title})
 
+    def push_text_input_level(self, on_text, *, title="", initial_text="", placeholder=""):
+        self.captures.append(
+            {"on_text": on_text, "title": title, "initial_text": initial_text}
+        )
+
     def refresh_current_level(self, entries):
         self.refreshed.append(entries)
 
@@ -105,6 +110,13 @@ SNAPSHOT = ToolSettings.from_dict(
                 "type": "color",
                 "value": "#00ff00",
             },
+            {"id": "Language", "label": "OCR language", "type": "string", "value": "eng"},
+            {
+                "id": "DataDirectory",
+                "label": "Data directory",
+                "type": "directory",
+                "value": "C:/data",
+            },
         ],
     }
 )
@@ -146,6 +158,8 @@ def test_snapshot_refreshes_the_list_with_one_row_per_setting():
         "Dark mode: On",
         "Speed boost key: Shift",
         "Indicator color: #00ff00",
+        "OCR language: eng",
+        "Data directory: C:/data",
     ]
 
 
@@ -244,6 +258,30 @@ def test_cancelling_the_color_picker_applies_nothing():
         _pick(dialog, "IndicatorColor")
 
     bridge.set_setting.assert_not_called()
+
+
+def test_picking_a_string_row_opens_inline_text_input_and_applies_it():
+    dialog, bridge = _open_and_load()
+
+    _pick(dialog, "Language")
+    capture = dialog.captures[-1]
+    capture["on_text"]("deu+eng")
+
+    assert capture["initial_text"] == "eng"
+    bridge.set_setting.assert_called_once_with("fastkeyboardmouse", "Language", "deu+eng")
+
+
+def test_picking_a_directory_row_opens_folder_picker_and_applies_it():
+    dialog, bridge = _open_and_load()
+
+    with patch(
+        "core.tool_settings_editor.QFileDialog.getExistingDirectory", return_value="D:/suggestions"
+    ):
+        _pick(dialog, "DataDirectory")
+
+    bridge.set_setting.assert_called_once_with(
+        "fastkeyboardmouse", "DataDirectory", "D:/suggestions"
+    )
 
 
 def test_a_fresh_snapshot_after_set_refreshes_with_the_new_value():

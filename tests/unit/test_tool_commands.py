@@ -83,6 +83,32 @@ def test_multi_action_tool_yields_one_command_each(tmp_path: Path):
     }
 
 
+def test_text_provider_yields_one_navigable_and_runnable_command(tmp_path: Path):
+    tool_dir = tmp_path / "FastTextSuggester"
+    _write_manifest(
+        tool_dir,
+        {
+            **VALID_MANIFEST,
+            "id": "fasttextsuggester",
+            "ipc_title": "FastToolIPC::fasttextsuggester",
+            "text_providers": [{"id": "suggestions", "label": "FastTextSuggester"}],
+        },
+    )
+    settings_store = SettingsStore(MemoryStore())
+    settings_store.set_tool_dirs([str(tool_dir)])
+
+    opened = []
+    commands, _bridge = build_tool_commands(
+        settings_store, open_text_provider=opened.append
+    )
+    command = next(c for c in commands if c.command_id.endswith("text.suggestions"))
+
+    assert command.title == "FastTextSuggester"
+    assert command.on_navigate is not None
+    command.run()
+    assert opened == ["tool.fasttextsuggester.text.suggestions"]
+
+
 def test_tool_dir_without_manifest_is_skipped(tmp_path: Path):
     empty_dir = tmp_path / "no-manifest-here"
     empty_dir.mkdir()

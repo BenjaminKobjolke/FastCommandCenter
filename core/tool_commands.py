@@ -13,6 +13,10 @@ palette drills into core/tool_settings_editor.py's live editor. Like
 `Appearance: ...` and `Tools: manage folders` (palette/commands.py), this is
 drill-in-only -- no direct-hotkey-when-closed support like `settings` has,
 see that module's `_NO_RUN`.
+
+Text-provider commands support both paths: `on_navigate` drills into an
+already-open palette, while `run` asks FCC to open directly at that provider
+when its global shortcut fires.
 """
 
 from __future__ import annotations
@@ -22,10 +26,11 @@ from pathlib import Path
 
 from command_palette import Command
 from command_palette.dialog import FilterListDialog
-from fasttool_host import ToolAction, ToolBridge
+from fasttool_host import ToolAction, ToolBridge, ToolTextProviderDef
 
 from config.settings_store import SettingsStore
 from core.tool_settings_editor import open_tool_settings_editor_in_palette
+from core.tool_text_provider import open_tool_text_provider_in_palette
 
 _NO_RUN: Callable[[], None] = lambda: None  # noqa: E731 — navigable commands never run() directly
 
@@ -54,10 +59,34 @@ def _make_on_navigate(
     return on_navigate
 
 
+def _make_text_on_navigate(
+    bridge: ToolBridge,
+    tool_id: str,
+    provider: ToolTextProviderDef,
+    paste_text: Callable[[str], None],
+) -> Callable[[FilterListDialog], None]:
+    def on_navigate(dialog: FilterListDialog) -> None:
+        open_tool_text_provider_in_palette(dialog, tool_id, provider, bridge, paste_text)
+
+    return on_navigate
+
+
+def _make_text_run(
+    command_id: str,
+    open_text_provider: Callable[[str], None],
+) -> Callable[[], None]:
+    def run() -> None:
+        open_text_provider(command_id)
+
+    return run
+
+
 def build_tool_commands(
     settings_store: SettingsStore,
     bridge: ToolBridge | None = None,
     yield_chords: Callable[[], list[str]] | None = None,
+    paste_text: Callable[[str], None] = lambda _text: None,
+    open_text_provider: Callable[[str], None] = lambda _command_id: None,
 ) -> tuple[list[Command], ToolBridge]:
     """Load every fasttool.json under ``settings_store.get_tool_dirs()`` and
     return one Command per declared action plus one navigable "<name>:
@@ -96,4 +125,18 @@ def build_tool_commands(
         )
         for manifest in bridge.manifests
     ]
-    return action_commands + settings_commands, bridge
+    text_commands = [
+        Command(
+            command_id=f"tool.{manifest.id}.text.{provider.id}",
+            title=provider.label,
+            run=_make_text_run(
+                f"tool.{manifest.id}.text.{provider.id}", open_text_provider
+            ),
+            on_navigate=_make_text_on_navigate(
+                bridge, manifest.id, provider, paste_text
+            ),
+        )
+        for manifest in bridge.manifests
+        for provider in manifest.text_providers
+    ]
+    return action_commands + text_commands + settings_commands, bridge

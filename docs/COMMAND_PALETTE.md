@@ -126,6 +126,27 @@ See **`docs/EXTERNAL_TOOLS.md`** for how this is implemented (the
 protocol, the repo split) and `FastCommandCenter-tool-bridge/CONTRACT.md` for
 the wire protocol.
 
+## External text providers
+
+An external tool may declare a live text provider. Its manifest label becomes
+a navigable command; selecting it keeps the FCC dialog open and sends the
+typed filter text to the tool. FCC displays only the newest correlated reply.
+Choosing a result closes FCC, restores the application that was active before
+the palette opened, copies the tool's resolved text to the clipboard, and
+pastes it with `Ctrl+V`.
+
+A global shortcut bound to a text-provider command opens FCC directly at
+that provider. The window focused before the shortcut fired remains the
+paste target.
+
+These are separate command paths: selection calls `on_navigate` on the live
+dialog, while a global shortcut calls `run` with no dialog available. A text
+provider is not complete unless both paths open the same provider level.
+
+FastTextSuggester uses this flow for words, lines, replacements, multiline
+blocks, CSV/TSV values, and recent OCR. Its capture actions are separate root
+commands; successful OCR asks FCC to reopen directly in the suggestion level.
+
 ## Configure keyboard shortcuts
 
 `settings` mounts the library's in-palette shortcut editor

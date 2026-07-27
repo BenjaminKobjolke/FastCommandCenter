@@ -15,6 +15,7 @@ for _stream in (sys.stdout, sys.stderr):
     if _stream is not None and hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8", errors="replace")
 
+import win32gui  # noqa: E402
 from command_palette import (  # noqa: E402
     CommandPalette,
     KeymapState,
@@ -34,6 +35,7 @@ from core.hotkey_bridge import HotkeyBridge  # noqa: E402
 from core.hotkey_manager import HotkeyManager, winhotkeys_bindings  # noqa: E402
 from core.hotkey_probe import HotkeyConflict  # noqa: E402
 from core.single_instance import SingleInstance  # noqa: E402
+from core.text_paste import paste_text  # noqa: E402
 from core.tool_commands import build_tool_commands  # noqa: E402
 from core.window_activation import force_foreground  # noqa: E402
 from gui.tray import build_tray  # noqa: E402
@@ -60,6 +62,7 @@ def main() -> None:
 
     bridge = HotkeyBridge()
     hotkey_manager = HotkeyManager()
+    palette_target_hwnd = 0
 
     def reinstall(keymap: KeyMap) -> list[HotkeyConflict]:
         """(Re)install every OS-global hotkey for ``keymap``, returning any
@@ -128,8 +131,7 @@ def main() -> None:
         by the tray action, the fresh-install prompt, and (via ``settings``'s
         ``run``) a global OS hotkey bound directly to "settings", which fires
         with no palette open yet."""
-        QTimer.singleShot(0, _raise_palette_to_foreground)
-        palette.open(navigate_to="settings")
+        _open_palette(navigate_to="settings")
 
     def apply_appearance(config: PaletteConfig) -> None:
         settings_store.set_appearance(config)
@@ -137,8 +139,19 @@ def main() -> None:
         palette.restyle_open_dialog()
 
     def open_palette() -> None:
+        _open_palette()
+
+    def _open_palette(navigate_to: str | None = None, target_hwnd: int | None = None) -> None:
+        nonlocal palette_target_hwnd
+        palette_target_hwnd = target_hwnd or win32gui.GetForegroundWindow()
         QTimer.singleShot(0, _raise_palette_to_foreground)
-        palette.open()
+        palette.open(navigate_to=navigate_to)
+
+    def paste_to_palette_target(text: str) -> None:
+        paste_text(text, palette_target_hwnd)
+
+    def open_text_provider(command_id: str) -> None:
+        _open_palette(navigate_to=command_id)
 
     def request_quit() -> None:
         # Both callers (palette command, tray menu action) fire this from
@@ -165,7 +178,13 @@ def main() -> None:
         ``palette``'s own reference -- sees the update without being touched.
         Reuses ``tool_bridge`` rather than building a new one, so instances it
         already launched stay tracked."""
-        new_tool_commands, _ = build_tool_commands(settings_store, tool_bridge, yield_chords)
+        new_tool_commands, _ = build_tool_commands(
+            settings_store,
+            tool_bridge,
+            yield_chords,
+            paste_to_palette_target,
+            open_text_provider,
+        )
         commands[:] = [
             c for c in commands if not c.command_id.startswith("tool.")
         ] + new_tool_commands
@@ -184,11 +203,30 @@ def main() -> None:
     # One command per action declared by an external tool's fasttool.json --
     # see FastCommandCenter-tool-bridge/CONTRACT.md. tool_bridge owns any
     # tool instances it had to launch; torn down alongside the app below.
-    tool_commands, tool_bridge = build_tool_commands(settings_store, yield_chords=yield_chords)
+    tool_commands, tool_bridge = build_tool_commands(
+        settings_store,
+        yield_chords=yield_chords,
+        paste_text=paste_to_palette_target,
+        open_text_provider=open_text_provider,
+    )
     commands.extend(tool_commands)
     dispatch = {command.command_id: command.run for command in commands}
 
     palette = CommandPalette(commands, store=shared_store, config=settings_store.get_appearance())
+
+    def activate_text_provider(activation) -> None:
+        command_id = f"tool.{activation.tool_id}.text.{activation.provider_id}"
+        target_hwnd = palette_target_hwnd or win32gui.GetForegroundWindow()
+
+        def open_when_idle() -> None:
+            if app.activeModalWidget() is not None:
+                QTimer.singleShot(100, open_when_idle)
+                return
+            _open_palette(navigate_to=command_id, target_hwnd=target_hwnd)
+
+        QTimer.singleShot(0, open_when_idle)
+
+    tool_bridge.text_provider_activation_requested.connect(activate_text_provider)
 
     bridge.triggered.connect(lambda command_id: dispatch.get(command_id, lambda: None)())
 
