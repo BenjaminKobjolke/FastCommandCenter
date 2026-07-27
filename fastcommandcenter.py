@@ -18,10 +18,12 @@ for _stream in (sys.stdout, sys.stderr):
 from command_palette import (  # noqa: E402
     CommandPalette,
     KeymapState,
+    ListEntry,
     PaletteConfig,
     open_shortcut_editor_in_palette,
 )
 from command_palette.dialog import FilterListDialog  # noqa: E402
+from command_palette.keymap import KeyMap  # noqa: E402
 from command_palette.store import JsonStore, default_state_path  # noqa: E402
 from PySide6.QtCore import QTimer  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
@@ -30,6 +32,7 @@ from app_logger import AppLogger  # noqa: E402
 from config.settings_store import APP_NAME, DEFAULT_BINDINGS, SettingsStore  # noqa: E402
 from core.hotkey_bridge import HotkeyBridge  # noqa: E402
 from core.hotkey_manager import HotkeyManager, winhotkeys_bindings  # noqa: E402
+from core.hotkey_probe import HotkeyConflict  # noqa: E402
 from core.single_instance import SingleInstance  # noqa: E402
 from core.tool_commands import build_tool_commands  # noqa: E402
 from core.window_activation import force_foreground  # noqa: E402
@@ -58,14 +61,56 @@ def main() -> None:
     bridge = HotkeyBridge()
     hotkey_manager = HotkeyManager()
 
+    def reinstall(keymap: KeyMap) -> list[HotkeyConflict]:
+        """(Re)install every OS-global hotkey for ``keymap``, returning any
+        chord some other program already owns -- see
+        ``core/hotkey_manager.py``'s ``apply()``. Without this, a conflicting
+        chord would bind here but silently never fire. Always logged
+        (``apply()`` itself warns); callers with a live dialog additionally
+        show ``_show_conflict_alert`` below."""
+        return hotkey_manager.apply(keymap, bridge.on_hotkey)
+
+    def _show_conflict_alert(dialog: FilterListDialog, conflicts: list[HotkeyConflict]) -> None:
+        """In-palette alert for a chord that just got bound but is already
+        held by another program -- this app's own design principle keeps every
+        bit of user-facing feedback inside the palette window, never a
+        separate dialog or tray balloon (see docs/COMMAND_PALETTE.md). Same
+        pushed-level mechanism the shortcut editor itself uses for its
+        reassign/clear confirms."""
+
+        def _dismiss(_entry: ListEntry) -> None:
+            dialog.pop_level()
+
+        dialog.push_level(
+            [ListEntry(title="OK", payload=None)],
+            _dismiss,
+            title="Shortcut already in use",
+            placeholder="; ".join(
+                f"{c.chord} is registered by another program and won't fire" for c in conflicts
+            ),
+        )
+
     def mount_shortcuts(dialog: FilterListDialog) -> None:
         """Drill the "Configure keyboard shortcuts" editor into the palette
         that's already open, in place -- see ``settings``'s ``on_navigate``."""
+
+        def on_change(keymap: KeyMap) -> None:
+            conflicts = reinstall(keymap)
+            if conflicts:
+                # Deferred: the library calls on_change from _finish_assign
+                # *before* its own _refresh_command_list() -- pushing a level
+                # here directly would have those rows stomped a moment later
+                # (refresh_current_level replaces the current level's entries
+                # in place, see dialog.py). Queuing lets that finish first,
+                # same "let the current callback chain finish" pattern as
+                # _raise_palette_to_foreground below.
+                QTimer.singleShot(0, lambda: _show_conflict_alert(dialog, conflicts))
+
         open_shortcut_editor_in_palette(
             dialog,
             commands,
             keymap_state,
-            on_change=lambda keymap: hotkey_manager.apply(keymap, bridge.on_hotkey),
+            on_change=on_change,
         )
 
     def _raise_palette_to_foreground() -> None:
@@ -146,11 +191,13 @@ def main() -> None:
     palette = CommandPalette(commands, store=shared_store, config=settings_store.get_appearance())
 
     bridge.triggered.connect(lambda command_id: dispatch.get(command_id, lambda: None)())
-    hotkey_manager.apply(keymap_state.effective(), bridge.on_hotkey)
 
     build_tray(
         app, open_palette, open_shortcuts_config, request_quit
     )  # app-parented inside; that keeps it alive
+    # Startup conflicts are log-only (apply() already AppLogger.warns) -- no
+    # palette dialog exists yet at boot to alert inside, see mount_shortcuts.
+    reinstall(keymap_state.effective())
 
     app.aboutToQuit.connect(hotkey_manager.stop)
     app.aboutToQuit.connect(single_instance.cleanup)

@@ -137,4 +137,14 @@ bound directly to it fires with no palette open yet, so `run` opens the
 palette navigated straight to the editor (`palette.open(navigate_to="settings")`)
 — `on_navigate` alone needs a live dialog to push into.
 
+The Windows key is a supported modifier — bind it like any other
+(`config/settings_store.py`'s `normalize_chord()`/`_to_qt_chord()` convert
+Qt's `Meta` token to/from winhotkeys' `win`, and `core/hotkey_manager.py`
+registers it with `MOD_WIN`). Capturing it in "Press a shortcut…" relies on
+the library's Windows-only low-level keyboard hook
+(`python-command-palette`'s `command_palette/win_capture.py`), since a plain
+Qt window never sees a Win+key press otherwise — the shell reserves it first.
+OS-secured combos (Ctrl+Alt+Del, the Secure Attention Sequence) can't be
+captured or bound by any user-mode app, this one included.
+
 See `docs/SETTINGS_STORAGE.md` for the persisted shape.
