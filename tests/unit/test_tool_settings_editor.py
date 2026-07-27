@@ -52,9 +52,7 @@ class _FakeDialog:
         self.captures.append({"on_chord": on_chord, "title": title})
 
     def push_text_input_level(self, on_text, *, title="", initial_text="", placeholder=""):
-        self.captures.append(
-            {"on_text": on_text, "title": title, "initial_text": initial_text}
-        )
+        self.captures.append({"on_text": on_text, "title": title, "initial_text": initial_text})
 
     def refresh_current_level(self, entries):
         self.refreshed.append(entries)
