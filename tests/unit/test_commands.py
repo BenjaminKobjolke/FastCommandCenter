@@ -7,7 +7,7 @@ from dataclasses import replace
 from command_palette import MemoryStore
 
 from config.settings_store import SettingsStore
-from palette.commands import build_commands
+from palette.commands import PaletteWiring, build_commands
 
 
 def _build_commands(
@@ -19,13 +19,15 @@ def _build_commands(
     refresh_tool_commands=lambda: None,
 ):
     return build_commands(
-        open_palette=open_palette,
-        open_settings=open_settings,
-        mount_shortcuts=mount_shortcuts or (lambda _dialog: None),
-        quit_app=lambda: None,
-        settings_store=settings_store or SettingsStore(MemoryStore()),
-        apply_appearance=lambda _config: None,
-        refresh_tool_commands=refresh_tool_commands,
+        PaletteWiring(
+            open_palette=open_palette,
+            open_settings=open_settings,
+            mount_shortcuts=mount_shortcuts or (lambda _dialog: None),
+            quit_app=lambda: None,
+            settings_store=settings_store or SettingsStore(MemoryStore()),
+            apply_appearance=lambda _config: None,
+            refresh_tool_commands=refresh_tool_commands,
+        )
     )
 
 
@@ -108,13 +110,15 @@ def test_font_size_submenu_preselects_the_current_value():
     settings_store = SettingsStore(MemoryStore())
     settings_store.set_appearance(replace(settings_store.get_appearance(), font_pt=18))
     commands = build_commands(
-        open_palette=lambda: None,
-        open_settings=lambda: None,
-        mount_shortcuts=lambda _dialog: None,
-        quit_app=lambda: None,
-        settings_store=settings_store,
-        apply_appearance=lambda _config: None,
-        refresh_tool_commands=lambda: None,
+        PaletteWiring(
+            open_palette=lambda: None,
+            open_settings=lambda: None,
+            mount_shortcuts=lambda _dialog: None,
+            quit_app=lambda: None,
+            settings_store=settings_store,
+            apply_appearance=lambda _config: None,
+            refresh_tool_commands=lambda: None,
+        )
     )
     font_cmd = next(c for c in commands if c.command_id == "appearance_font")
     rows = font_cmd.submenu()
@@ -133,13 +137,15 @@ def test_width_submenu_preselects_the_current_value():
     settings_store = SettingsStore(MemoryStore())
     settings_store.set_appearance(replace(settings_store.get_appearance(), width_pct=60))
     commands = build_commands(
-        open_palette=lambda: None,
-        open_settings=lambda: None,
-        mount_shortcuts=lambda _dialog: None,
-        quit_app=lambda: None,
-        settings_store=settings_store,
-        apply_appearance=lambda _config: None,
-        refresh_tool_commands=lambda: None,
+        PaletteWiring(
+            open_palette=lambda: None,
+            open_settings=lambda: None,
+            mount_shortcuts=lambda _dialog: None,
+            quit_app=lambda: None,
+            settings_store=settings_store,
+            apply_appearance=lambda _config: None,
+            refresh_tool_commands=lambda: None,
+        )
     )
     width_cmd = next(c for c in commands if c.command_id == "appearance_width")
     rows = width_cmd.submenu()
@@ -150,13 +156,15 @@ def test_choosing_a_font_size_applies_it_via_settings_store():
     applied = []
     settings_store = SettingsStore(MemoryStore())
     commands = build_commands(
-        open_palette=lambda: None,
-        open_settings=lambda: None,
-        mount_shortcuts=lambda _dialog: None,
-        quit_app=lambda: None,
-        settings_store=settings_store,
-        apply_appearance=lambda config: applied.append(config),
-        refresh_tool_commands=lambda: None,
+        PaletteWiring(
+            open_palette=lambda: None,
+            open_settings=lambda: None,
+            mount_shortcuts=lambda _dialog: None,
+            quit_app=lambda: None,
+            settings_store=settings_store,
+            apply_appearance=lambda config: applied.append(config),
+            refresh_tool_commands=lambda: None,
+        )
     )
     font_cmd = next(c for c in commands if c.command_id == "appearance_font")
     font_cmd.on_submenu_choice(18)
@@ -168,13 +176,15 @@ def test_color_submenu_reset_choice_applies_none():
     applied = []
     settings_store = SettingsStore(MemoryStore())
     commands = build_commands(
-        open_palette=lambda: None,
-        open_settings=lambda: None,
-        mount_shortcuts=lambda _dialog: None,
-        quit_app=lambda: None,
-        settings_store=settings_store,
-        apply_appearance=lambda config: applied.append(config),
-        refresh_tool_commands=lambda: None,
+        PaletteWiring(
+            open_palette=lambda: None,
+            open_settings=lambda: None,
+            mount_shortcuts=lambda _dialog: None,
+            quit_app=lambda: None,
+            settings_store=settings_store,
+            apply_appearance=lambda config: applied.append(config),
+            refresh_tool_commands=lambda: None,
+        )
     )
     active_fg_cmd = next(c for c in commands if c.command_id == "appearance_active_fg")
     rows = active_fg_cmd.submenu()

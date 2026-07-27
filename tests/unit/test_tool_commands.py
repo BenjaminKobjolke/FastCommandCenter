@@ -15,7 +15,7 @@ from command_palette import MemoryStore
 from fasttool_host import ToolBridge
 
 from config.settings_store import SettingsStore
-from core.tool_commands import build_tool_commands
+from core.tool_commands import ToolCommandsCallbacks, build_tool_commands
 
 VALID_MANIFEST = {
     "id": "fastkeyboardmouse",
@@ -99,7 +99,7 @@ def test_text_provider_yields_one_navigable_and_runnable_command(tmp_path: Path)
 
     opened = []
     commands, _bridge = build_tool_commands(
-        settings_store, open_text_provider=opened.append
+        settings_store, callbacks=ToolCommandsCallbacks(open_text_provider=opened.append)
     )
     command = next(c for c in commands if c.command_id.endswith("text.suggestions"))
 
@@ -133,7 +133,7 @@ def test_run_fires_with_yield_chords_read_fresh_from_the_provider(tmp_path: Path
     chords = ["alt+q"]
 
     commands, _bridge = build_tool_commands(
-        settings_store, fake_bridge, yield_chords=lambda: chords
+        settings_store, fake_bridge, ToolCommandsCallbacks(yield_chords=lambda: chords)
     )
     commands[0].run()
 

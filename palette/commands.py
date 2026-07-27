@@ -21,7 +21,7 @@ against a dialog that doesn't exist.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from command_palette import Command, ListEntry, PaletteConfig
@@ -51,26 +51,34 @@ ApplyAppearance = Callable[[PaletteConfig], None]
 _NO_RUN: Callable[[], None] = lambda: None  # noqa: E731 — navigable commands never run() directly
 
 
-def build_commands(
-    open_palette: Callable[[], None],
-    open_settings: Callable[[], None],
-    mount_shortcuts: Callable[[FilterListDialog], None],
-    quit_app: Callable[[], None],
-    settings_store: SettingsStore,
-    apply_appearance: ApplyAppearance,
-    refresh_tool_commands: Callable[[], None],
-) -> list[Command]:
+@dataclass(frozen=True)
+class PaletteWiring:
+    """Everything build_commands() needs from its host app, bundled instead of
+    passed as a loose swarm of callbacks."""
+
+    open_palette: Callable[[], None]
+    open_settings: Callable[[], None]
+    mount_shortcuts: Callable[[FilterListDialog], None]
+    quit_app: Callable[[], None]
+    settings_store: SettingsStore
+    apply_appearance: ApplyAppearance
+    refresh_tool_commands: Callable[[], None]
+
+
+def build_commands(wiring: PaletteWiring) -> list[Command]:
+    settings_store = wiring.settings_store
+    apply_appearance = wiring.apply_appearance
     return [
         Command(
             command_id="open_palette",
             title="Open command palette",
-            run=open_palette,
+            run=wiring.open_palette,
         ),
         Command(
             command_id="settings",
             title="Configure keyboard shortcuts",
-            run=open_settings,
-            on_navigate=mount_shortcuts,
+            run=wiring.open_settings,
+            on_navigate=wiring.mount_shortcuts,
         ),
         Command(
             command_id="appearance_font",
@@ -138,10 +146,10 @@ def build_commands(
             run=_NO_RUN,
             submenu=lambda: _tool_folder_entries(settings_store),
             on_submenu_choice=lambda choice: _apply_tool_folder_choice(
-                choice, settings_store, refresh_tool_commands
+                choice, settings_store, wiring.refresh_tool_commands
             ),
         ),
-        Command(command_id="quit", title="Quit FastCommandCenter", run=quit_app),
+        Command(command_id="quit", title="Quit FastCommandCenter", run=wiring.quit_app),
     ]
 
 

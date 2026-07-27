@@ -36,10 +36,10 @@ from core.hotkey_manager import HotkeyManager, winhotkeys_bindings  # noqa: E402
 from core.hotkey_probe import HotkeyConflict  # noqa: E402
 from core.single_instance import SingleInstance  # noqa: E402
 from core.text_paste import paste_text  # noqa: E402
-from core.tool_commands import build_tool_commands  # noqa: E402
+from core.tool_commands import ToolCommandsCallbacks, build_tool_commands  # noqa: E402
 from core.window_activation import force_foreground  # noqa: E402
 from gui.tray import build_tray  # noqa: E402
-from palette.commands import build_commands  # noqa: E402
+from palette.commands import PaletteWiring, build_commands  # noqa: E402
 
 
 def main() -> None:
@@ -170,6 +170,14 @@ def main() -> None:
         very next toggle."""
         return sorted({chord for chord, _ in winhotkeys_bindings(keymap_state.effective())})
 
+    # Shared by both build_tool_commands() calls below -- the initial load and
+    # refresh_tool_commands()'s reload after "Tools: manage folders" changes.
+    tool_callbacks = ToolCommandsCallbacks(
+        yield_chords=yield_chords,
+        paste_text=paste_to_palette_target,
+        open_text_provider=open_text_provider,
+    )
+
     def refresh_tool_commands() -> None:
         """Rebuild the tool.* commands after ``settings_store``'s tool_dirs
         changed (see "Tools: manage folders"). Mutates ``commands``/``dispatch``
@@ -178,13 +186,7 @@ def main() -> None:
         ``palette``'s own reference -- sees the update without being touched.
         Reuses ``tool_bridge`` rather than building a new one, so instances it
         already launched stay tracked."""
-        new_tool_commands, _ = build_tool_commands(
-            settings_store,
-            tool_bridge,
-            yield_chords,
-            paste_to_palette_target,
-            open_text_provider,
-        )
+        new_tool_commands, _ = build_tool_commands(settings_store, tool_bridge, tool_callbacks)
         commands[:] = [
             c for c in commands if not c.command_id.startswith("tool.")
         ] + new_tool_commands
@@ -192,23 +194,20 @@ def main() -> None:
         dispatch.update({command.command_id: command.run for command in commands})
 
     commands = build_commands(
-        open_palette,
-        open_shortcuts_config,
-        mount_shortcuts,
-        request_quit,
-        settings_store,
-        apply_appearance,
-        refresh_tool_commands,
+        PaletteWiring(
+            open_palette=open_palette,
+            open_settings=open_shortcuts_config,
+            mount_shortcuts=mount_shortcuts,
+            quit_app=request_quit,
+            settings_store=settings_store,
+            apply_appearance=apply_appearance,
+            refresh_tool_commands=refresh_tool_commands,
+        )
     )
     # One command per action declared by an external tool's fasttool.json --
     # see FastCommandCenter-tool-bridge/CONTRACT.md. tool_bridge owns any
     # tool instances it had to launch; torn down alongside the app below.
-    tool_commands, tool_bridge = build_tool_commands(
-        settings_store,
-        yield_chords=yield_chords,
-        paste_text=paste_to_palette_target,
-        open_text_provider=open_text_provider,
-    )
+    tool_commands, tool_bridge = build_tool_commands(settings_store, callbacks=tool_callbacks)
     commands.extend(tool_commands)
     dispatch = {command.command_id: command.run for command in commands}
 

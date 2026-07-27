@@ -22,6 +22,7 @@ when its global shortcut fires.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from command_palette import Command
@@ -33,6 +34,17 @@ from core.tool_settings_editor import open_tool_settings_editor_in_palette
 from core.tool_text_provider import open_tool_text_provider_in_palette
 
 _NO_RUN: Callable[[], None] = lambda: None  # noqa: E731 — navigable commands never run() directly
+
+
+@dataclass(frozen=True)
+class ToolCommandsCallbacks:
+    """The callback swarm build_tool_commands() needs, bundled. settings_store
+    and bridge stay separate params -- bridge varies per call (None first,
+    reused after) and is also returned, unlike these fixed callbacks."""
+
+    yield_chords: Callable[[], list[str]] | None = None
+    paste_text: Callable[[str], None] = lambda _text: None  # noqa: E731
+    open_text_provider: Callable[[str], None] = lambda _command_id: None  # noqa: E731
 
 
 def _make_run(
@@ -84,9 +96,7 @@ def _make_text_run(
 def build_tool_commands(
     settings_store: SettingsStore,
     bridge: ToolBridge | None = None,
-    yield_chords: Callable[[], list[str]] | None = None,
-    paste_text: Callable[[str], None] = lambda _text: None,
-    open_text_provider: Callable[[str], None] = lambda _command_id: None,
+    callbacks: ToolCommandsCallbacks | None = None,
 ) -> tuple[list[Command], ToolBridge]:
     """Load every fasttool.json under ``settings_store.get_tool_dirs()`` and
     return one Command per declared action plus one navigable "<name>:
@@ -98,8 +108,8 @@ def build_tool_commands(
     fresh ``ToolBridge()`` would lose track of any instances the original one
     already launched.
 
-    ``yield_chords``, if given, is called fresh on every fire and its result
-    (the host's currently-registered chords, neutral format) is sent
+    ``callbacks.yield_chords``, if given, is called fresh on every fire and its
+    result (the host's currently-registered chords, neutral format) is sent
     alongside the action -- see CONTRACT.md's "Yielding hotkeys while a tool
     is active". This is how a global hotkey bound to a tool's own action
     (e.g. a toggle) keeps working after the tool goes active and installs its
@@ -107,12 +117,13 @@ def build_tool_commands(
     before the host's `RegisterHotKey` ever sees it.
     """
     bridge = bridge if bridge is not None else ToolBridge()
+    callbacks = callbacks if callbacks is not None else ToolCommandsCallbacks()
     actions = bridge.load([Path(tool_dir) for tool_dir in settings_store.get_tool_dirs()])
     action_commands = [
         Command(
             command_id=action.command_id,
             title=action.title,
-            run=_make_run(bridge, action, yield_chords),
+            run=_make_run(bridge, action, callbacks.yield_chords),
         )
         for action in actions
     ]
@@ -130,11 +141,9 @@ def build_tool_commands(
             command_id=f"tool.{manifest.id}.text.{provider.id}",
             title=provider.label,
             run=_make_text_run(
-                f"tool.{manifest.id}.text.{provider.id}", open_text_provider
+                f"tool.{manifest.id}.text.{provider.id}", callbacks.open_text_provider
             ),
-            on_navigate=_make_text_on_navigate(
-                bridge, manifest.id, provider, paste_text
-            ),
+            on_navigate=_make_text_on_navigate(bridge, manifest.id, provider, callbacks.paste_text),
         )
         for manifest in bridge.manifests
         for provider in manifest.text_providers
