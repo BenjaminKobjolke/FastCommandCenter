@@ -130,10 +130,16 @@ the wire protocol.
 
 An external tool may declare a live text provider. Its manifest label becomes
 a navigable command; selecting it keeps the FCC dialog open and sends the
-typed filter text to the tool. FCC displays only the newest correlated reply.
+typed filter text to the tool. FCC displays only the newest correlated reply;
+while a reply is in flight the previous results stay visible, so typing never
+blanks the list (the "Loading suggestions..." row only shows before the first
+reply).
 Choosing a result closes FCC, restores the application that was active before
 the palette opened, copies the tool's resolved text to the clipboard, and
 pastes it with `Ctrl+V`.
+The chosen result is also echoed back to the tool (fire-and-forget `selected`
+message), so a tool can bump its own usage/frecency ranking — cli-favorites'
+"Favorite Folders" does.
 
 A global shortcut bound to a text-provider command opens FCC directly at
 that provider. The window focused before the shortcut fired remains the
@@ -146,6 +152,9 @@ provider is not complete unless both paths open the same provider level.
 FastTextSuggester uses this flow for words, lines, replacements, multiline
 blocks, CSV/TSV values, and recent OCR. Its capture actions are separate root
 commands; successful OCR asks FCC to reopen directly in the suggestion level.
+cli-favorites uses it for "Favorite Folders" (pick a favorite → its resolved
+path is pasted) and consumes the `selected` echo to bump the same frecency
+counts its CLI writes.
 
 ## Configure keyboard shortcuts
 

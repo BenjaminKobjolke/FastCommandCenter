@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from command_palette import ListEntry
 from command_palette.dialog import FilterListDialog
-from fasttool_host import ToolBridge, ToolTextProviderDef, ToolTextResults
+from fasttool_host import ToolBridge, ToolTextProviderDef, ToolTextResult, ToolTextResults
 from PySide6.QtCore import QTimer
 
 _LOADING = "Loading suggestions..."
@@ -59,6 +59,11 @@ class _ToolTextProviderEditor:
                 self._request_id,
                 query,
             )
+        # While the reply is in flight, keep the previous results on screen
+        # instead of flashing a loading row on every keystroke -- the loading
+        # placeholder only shows before the first reply ever arrives.
+        if self._rows:
+            return self._rows
         return [ListEntry(title=_LOADING)]
 
     def _on_results(self, results: ToolTextResults) -> None:
@@ -70,19 +75,31 @@ class _ToolTextProviderEditor:
         ):
             return
         self._resolved_query = self._requested_query
+        # payload carries the whole result, not just its text: _choose echoes
+        # title/subtitle back to the tool (v3 `selected`) so it can identify
+        # which entry was picked, e.g. to bump its own usage/frecency counts.
         self._rows = [
-            ListEntry(title=item.title, subtitle=item.subtitle, payload=item.text)
+            ListEntry(title=item.title, subtitle=item.subtitle, payload=item)
             for item in results.results
         ]
         self._dialog.refresh_current_level([])
 
     def _choose(self, entry: ListEntry) -> None:
-        if entry.payload is None:
+        item = entry.payload
+        if not isinstance(item, ToolTextResult):
             return
-        text = str(entry.payload)
+        self._bridge.notify_text_selection(
+            self._tool_id,
+            self._provider.id,
+            self._session_id,
+            self._request_id,
+            item.title,
+            item.subtitle,
+            item.text,
+        )
         self._disconnect()
         self._dialog.accept()
-        QTimer.singleShot(100, lambda: self._paste_text(text))
+        QTimer.singleShot(100, lambda: self._paste_text(item.text))
 
     def _disconnect(self) -> None:
         with suppress(TypeError, RuntimeError):

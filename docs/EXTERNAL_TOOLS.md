@@ -301,7 +301,11 @@ Text providers are dynamic, navigable tool commands rather than fixed actions.
 tuple and emits typed `ToolTextResults` replies. FCC's adapter rejects stale
 request ids and maps the newest rows into a pushed palette provider. The tool
 owns matching and returns resolved insertion text; FCC owns focus restoration,
-clipboard assignment, and `Ctrl+V`.
+clipboard assignment, and `Ctrl+V` (full paste mechanism:
+`docs/TEXT_PASTE.md`). On pick, FCC also echoes the chosen result
+back to the tool (`ToolBridge.notify_text_selection()`, the v3 `selected`
+kind) — fire-and-forget and find-only (an exited tool is not relaunched for
+it), so a tool can bump its own usage/frecency ranking (cli-favorites does).
 
 Tools may emit `text_provider_activation_requested`, allowing an asynchronous
 workflow such as OCR to reopen FCC directly at a declared provider. The bridge
@@ -320,9 +324,10 @@ Before considering a new provider integrated, verify all of these paths:
 |---|---|
 | Select provider in an open palette | Pushes the provider level and accepts typed queries |
 | Fire its assigned global shortcut | Opens FCC directly at the provider level |
-| Choose a result from either path | Closes FCC and pastes into the previously focused window |
+| Choose a result from either path | Closes FCC, pastes into the previously focused window, and echoes the pick to the tool (`selected`) |
 | Query while the tool is not running | FCC launches it and displays its first correlated reply |
 | Query while the tool is already running | FCC reuses it and displays the newest correlated reply |
+| Type while a reply is outstanding | Previous results stay visible; no loading flash after the first reply |
 | Tool requests activation asynchronously | FCC waits for any active modal to close, then opens the provider |
 
 The first two rows are intentionally separate tests: palette selection uses
