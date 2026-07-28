@@ -46,6 +46,23 @@ def test_open_palette_command_present_and_runnable():
     assert ran == ["open_palette"]
 
 
+def test_open_palette_is_hidden_from_the_main_list():
+    # The palette is already open whenever its list shows, so "Open command
+    # palette" is pointless as a row -- it stays bindable (hotkey dispatch and
+    # the shortcut editor ignore is_enabled), but the dialog drops disabled
+    # entries from the main list.
+    from command_palette.entries import build_palette_entries
+    from command_palette.keymap import KeyMap
+
+    commands = _build_commands()
+    open_cmd = next(c for c in commands if c.command_id == "open_palette")
+    assert open_cmd.is_enabled() is False
+
+    entries = build_palette_entries(commands, mru=[], keymap=KeyMap(bindings=()))
+    visible = [e.payload.command_id for e in entries if e.enabled]
+    assert "open_palette" not in visible
+
+
 def test_settings_command_retitled_to_configure_shortcuts():
     commands = _build_commands()
     settings_cmd = next(c for c in commands if c.command_id == "settings")

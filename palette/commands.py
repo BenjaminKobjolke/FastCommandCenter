@@ -85,6 +85,11 @@ def build_commands(wiring: PaletteWiring) -> list[Command]:
             command_id="open_palette",
             title="Open command palette",
             run=wiring.open_palette,
+            # Not availability -- a permanent hide. The palette is already open
+            # whenever its list shows, so the row is pointless; the dialog drops
+            # disabled entries, while hotkey dispatch and the shortcut editor
+            # ignore is_enabled, keeping the command bindable.
+            is_enabled=lambda: False,
         ),
         Command(
             command_id="settings",
