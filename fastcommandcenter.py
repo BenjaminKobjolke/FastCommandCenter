@@ -144,6 +144,13 @@ def main() -> None:
 
     def _open_palette(navigate_to: str | None = None, target_hwnd: int | None = None) -> None:
         nonlocal palette_target_hwnd
+        if palette.is_open:
+            # Already open: focus the live dialog instead of nesting a second
+            # exec() loop. Keeps palette_target_hwnd (the original paste
+            # target) untouched, and deliberately skips navigate_to --
+            # re-drilling an open dialog would stack levels unpredictably.
+            _raise_palette_to_foreground()
+            return
         palette_target_hwnd = target_hwnd or win32gui.GetForegroundWindow()
         QTimer.singleShot(0, _raise_palette_to_foreground)
         palette.open(navigate_to=navigate_to)

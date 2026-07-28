@@ -22,6 +22,11 @@ right before `palette.open()`, so a hotkey fired from cold start still brings
 the dialog to the front — not just the tray path, which was already
 foreground. `open_shortcuts_config()` does the same.
 
+Re-triggering open while the palette is already up (hotkey or tray) focuses
+the existing dialog instead of opening a second one — `_open_palette()` checks
+the library's `CommandPalette.is_open` and just re-runs the
+`force_foreground()` step, leaving the original paste target untouched.
+
 ## The command list
 
 Built once by `build_commands()` in `palette/commands.py`:
