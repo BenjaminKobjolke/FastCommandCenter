@@ -41,10 +41,16 @@ Choosing a row (`core/tool_text_provider.py`'s `_choose`):
 calls `core/text_paste.py`'s
 `paste_text(text, palette_target_hwnd, chord)`:
 
-1. **Clipboard**: `QApplication.clipboard().setText(text)` — the text is on
-   the clipboard from here on, regardless of whether the `Ctrl+V` below
-   lands (so a failed paste still leaves the value one manual `Ctrl+V`
-   away). Empty text is a no-op: nothing is copied, nothing pasted.
+1. **Clipboard**: `QApplication.clipboard().setText(text)` followed by
+   `pythoncom.OleFlushClipboard()` — the text is on the clipboard from here
+   on, regardless of whether the `Ctrl+V` below lands (so a failed paste
+   still leaves the value one manual `Ctrl+V` away). The flush matters: Qt
+   puts a delayed-rendered data object on the OLE clipboard whose content is
+   fetched via a callback into FCC's GUI thread — which the inter-chord
+   `time.sleep` below blocks, making the target resolve the *previous*
+   clipboard value. Flushing renders the text into the clipboard up front so
+   no callback is needed. Empty text is a no-op: nothing is copied, nothing
+   pasted.
 2. **Refocus**: `force_foreground(target_hwnd)`
    (`core/window_activation.py`) — a background tray process is never
    Windows' foreground process, so a bare `SetForegroundWindow` would be
@@ -52,7 +58,11 @@ calls `core/text_paste.py`'s
    process's input thread to the current foreground window's thread
    (`AttachThreadInput`), sets the target foreground, then detaches.
    Skipped when the captured HWND is 0 (nothing usable was focused).
-3. **Synthesize the paste chord**: `win32api.keybd_event` presses the
+3. **Settle**: a 300 ms pause (`_PRE_PASTE_DELAY_S`) before the first
+   keystroke — without it the target can process the paste chord before
+   the clipboard update has settled and paste the *previous* value
+   (empirically: 100 ms too short for WezTerm, 300 ms reliable).
+4. **Synthesize the paste chord**: `win32api.keybd_event` presses the
    chord's keys in order and releases them in reverse (Ctrl down, V down,
    V up, Ctrl up for the default) into whatever now owns focus — i.e. the
    restored target window, which interprets it as a normal paste. The
@@ -73,7 +83,7 @@ Some applications don't paste on `Ctrl+V` — terminals like WezTerm use
 The value can also be a comma-separated *sequence* of chords — e.g.
 `ctrl+shift+v,enter` pastes and then presses Enter (paste-and-submit).
 Chords are synthesized in order, each fully pressed and released, with a
-100 ms pause (`_INTER_CHORD_DELAY_S`) before every follow-up chord so the
+300 ms pause (`_INTER_CHORD_DELAY_S`) before every follow-up chord so the
 target app finishes handling the paste before e.g. the Enter arrives. A
 bad token anywhere discards the whole sequence for plain `Ctrl+V` — a
 partial run (paste chord dropped but a trailing Enter still fired) would

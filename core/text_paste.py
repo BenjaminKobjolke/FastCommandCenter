@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 
+import pythoncom
 import win32api
 import win32con
 from PySide6.QtWidgets import QApplication
@@ -17,7 +18,13 @@ _FALLBACK_VKS = [vk_key_names[token] for token in DEFAULT_PASTE_CHORD.split("+")
 # Pause before each follow-up chord in a sequence (e.g. the Enter in
 # "ctrl+shift+v,enter") -- gives the target app time to finish handling the
 # paste before the next keystroke arrives.
-_INTER_CHORD_DELAY_S = 0.1
+_INTER_CHORD_DELAY_S = 0.3
+
+# Pause between clipboard set/refocus and the first synthesized chord --
+# without it the target app can process the paste keystroke before the
+# clipboard update has settled and paste the previous value (0.1 s was
+# empirically too short for WezTerm, 0.3 s reliable).
+_PRE_PASTE_DELAY_S = 0.3
 
 
 def _sequence_vks(sequence: str) -> list[list[int]]:
@@ -38,8 +45,15 @@ def paste_text(text: str, target_hwnd: int, chord: str = DEFAULT_PASTE_CHORD) ->
     if not text:
         return
     QApplication.clipboard().setText(text)
+    # Qt puts a delayed-rendered data object on the OLE clipboard: the target
+    # app's paste calls back into THIS process's GUI thread for the actual
+    # text, which the time.sleep() between sequence chords below blocks --
+    # the target then resolves to the previous clipboard value. Flushing
+    # renders the text into the clipboard now, so no callback is needed.
+    pythoncom.OleFlushClipboard()
     if target_hwnd:
         force_foreground(target_hwnd)
+    time.sleep(_PRE_PASTE_DELAY_S)
     for index, vks in enumerate(_sequence_vks(chord)):
         if index:
             time.sleep(_INTER_CHORD_DELAY_S)
