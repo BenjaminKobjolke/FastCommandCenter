@@ -31,9 +31,14 @@ the library's `CommandPalette.is_open` and just re-runs the
 
 Built once by `build_commands()` in `palette/commands.py`:
 
+Rows are ordered by use count — most-used first, ties broken by recency (the
+library's `HistoryState`). Typing a filter narrows the list but never
+re-ranks it, so results stay in most-used order. Full ordering rules — what
+counts as a use, persistence, migration — in `docs/COMMAND_PALETTE_ORDER.md`.
+
 | Command | Behavior |
 |---|---|
-| `open_palette` | The opener itself — also a bindable hotkey target, like every other command. |
+| `open_palette` | The opener itself — **hidden from this list** (`is_enabled=lambda: False`; the palette is already open when the list shows). Still a bindable hotkey target: the shortcut editor and hotkey dispatch ignore `is_enabled`. |
 | `settings` (title: "Configure keyboard shortcuts") | Navigable — drills into the shortcut editor in the same window. |
 | `Appearance: font size` / `window width` / `window height` / `opacity` | Navigable — drills into a value list. |
 | `Appearance: selected row color` / `other rows color` | Navigable — drills into "Choose custom color…" / "Reset to theme default". |
