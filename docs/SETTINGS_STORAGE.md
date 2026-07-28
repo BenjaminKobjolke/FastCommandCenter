@@ -22,7 +22,8 @@ fine at this scale, a handful of small keys.
   "global_hotkey": { "chord": "ctrl+alt+space" },
   "history": { ... },
   "key_bindings": { "overrides": [{ "chord": "Ctrl+Alt+Q", "command_id": "quit" }] },
-  "tool_dirs": { "dirs": ["D:\\GIT\\BenjaminKobjolke\\FastTools\\FastKeyboardMouse"] }
+  "tool_dirs": { "dirs": ["D:\\GIT\\BenjaminKobjolke\\FastTools\\FastKeyboardMouse"] },
+  "paste_overrides": { "map": { "wezterm-gui.exe": "ctrl+shift+v" } }
 }
 ```
 
@@ -37,6 +38,17 @@ fine at this scale, a handful of small keys.
   default; never hand-edit this — use the palette's own "Tools: manage
   folders" command (`get_tool_dirs()`/`set_tool_dirs()` are the only reader/
   writer, both in `config/settings_store.py`).
+- **`paste_overrides`** — owned by FastCommandCenter (`config/settings_store.py`,
+  `PASTE_OVERRIDES_KEY = "paste_overrides"`). Per-app paste chords: exe
+  basename (lowercase) → winhotkeys-format chord, or a comma-separated
+  chord sequence (`"ctrl+shift+v,enter"` = paste then Enter), used by the
+  text-provider paste (`docs/TEXT_PASTE.md`). Apps not listed get `Ctrl+V`. Absent until
+  first written, in which case `DEFAULT_PASTE_OVERRIDES` applies
+  (`wezterm-gui.exe` → `ctrl+shift+v`, since terminals paste with
+  Ctrl+Shift+V); once written the stored map wins, so removing the seed
+  sticks. Edited via the palette's "Paste: behaviour for current
+  application" command — hand-editing is only needed for a chord the
+  command doesn't offer.
 - **`key_bindings`** — owned by the `python-command-palette` library
   (`KeymapState`, `KEY_BINDINGS_KEY = "key_bindings"`) but this is the key that
   actually matters now: every command's global hotkey(s) live here as

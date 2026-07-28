@@ -38,6 +38,7 @@ from core.single_instance import SingleInstance  # noqa: E402
 from core.text_paste import paste_text  # noqa: E402
 from core.tool_commands import ToolCommandsCallbacks, build_tool_commands  # noqa: E402
 from core.window_activation import force_foreground  # noqa: E402
+from core.window_process import exe_basename_for_hwnd  # noqa: E402
 from gui.tray import build_tray  # noqa: E402
 from palette.commands import PaletteWiring, build_commands  # noqa: E402
 
@@ -148,7 +149,14 @@ def main() -> None:
         palette.open(navigate_to=navigate_to)
 
     def paste_to_palette_target(text: str) -> None:
-        paste_text(text, palette_target_hwnd)
+        chord = settings_store.paste_chord_for(exe_basename_for_hwnd(palette_target_hwnd))
+        paste_text(text, palette_target_hwnd, chord)
+
+    def open_paste_behaviour() -> None:
+        """Open the palette drilled into the paste-behaviour chord list --
+        `_open_palette` snapshots the foreground window first, so a hotkey
+        pressed inside e.g. WezTerm configures WezTerm."""
+        _open_palette(navigate_to="paste_behaviour")
 
     def open_text_provider(command_id: str) -> None:
         _open_palette(navigate_to=command_id)
@@ -202,6 +210,8 @@ def main() -> None:
             settings_store=settings_store,
             apply_appearance=apply_appearance,
             refresh_tool_commands=refresh_tool_commands,
+            paste_target_exe=lambda: exe_basename_for_hwnd(palette_target_hwnd),
+            open_paste_behaviour=open_paste_behaviour,
         )
     )
     # One command per action declared by an external tool's fasttool.json --

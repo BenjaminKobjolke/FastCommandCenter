@@ -32,6 +32,7 @@ Built once by `build_commands()` in `palette/commands.py`:
 | `settings` (title: "Configure keyboard shortcuts") | Navigable — drills into the shortcut editor in the same window. |
 | `Appearance: font size` / `window width` / `window height` / `opacity` | Navigable — drills into a value list. |
 | `Appearance: selected row color` / `other rows color` | Navigable — drills into "Choose custom color…" / "Reset to theme default". |
+| `paste_behaviour` (title: "Paste: behaviour for current application") | Navigable — pick the paste chord (`Ctrl+V` / `Ctrl+Shift+V`, each optionally followed by Enter) FCC synthesizes into the window that was focused before the palette opened (see `docs/TEXT_PASTE.md`). |
 | `Tools: manage folders` | Navigable — add/remove the folders scanned for external tools (see "External tool commands" below). |
 | `quit` (title: "Quit FastCommandCenter") | Terminal — runs and closes the palette. |
 
@@ -136,9 +137,11 @@ blanks the list (the "Loading suggestions..." row only shows before the first
 reply).
 Choosing a result closes FCC, restores the application that was active before
 the palette opened, copies the tool's resolved text to the clipboard, and
-pastes it with `Ctrl+V`.
-The chosen result is also echoed back to the tool (fire-and-forget `selected`
-message), so a tool can bump its own usage/frecency ranking — cli-favorites'
+pastes it with `Ctrl+V` — or the target app's configured chord, e.g.
+`Ctrl+Shift+V` for WezTerm (mechanism and per-app overrides in
+`docs/TEXT_PASTE.md`). The chosen
+result is also echoed back to the tool (fire-and-forget `selected` message),
+so a tool can bump its own usage/frecency ranking — cli-favorites'
 "Favorite Folders" does.
 
 A global shortcut bound to a text-provider command opens FCC directly at

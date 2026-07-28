@@ -22,6 +22,12 @@ CHORD_KEY = "global_hotkey"
 DEFAULT_CHORD = "ctrl+alt+space"
 APPEARANCE_KEY = "appearance"
 TOOL_DIRS_KEY = "tool_dirs"
+PASTE_OVERRIDES_KEY = "paste_overrides"
+DEFAULT_PASTE_CHORD = "ctrl+v"
+# Apps whose paste chord differs from Ctrl+V, seeded so they work out of the
+# box; winhotkeys chord format (see normalize_chord). Once the user touches
+# the setting, the stored map wins -- removing a seed sticks.
+DEFAULT_PASTE_OVERRIDES = {"wezterm-gui.exe": "ctrl+shift+v"}
 OPEN_PALETTE_COMMAND_ID = "open_palette"
 DEFAULT_BINDINGS: list[DefaultPair] = [("Ctrl+Alt+Space", OPEN_PALETTE_COMMAND_ID)]
 
@@ -123,3 +129,25 @@ class SettingsStore:
     def set_tool_dirs(self, dirs: list[str]) -> None:
         """Persist the folders to scan for `fasttool.json` manifests."""
         self._store.write(TOOL_DIRS_KEY, {"dirs": list(dirs)})
+
+    def get_paste_overrides(self) -> dict[str, str]:
+        """Per-app paste chords (exe basename -> winhotkeys chord, or a
+        comma-separated chord sequence like "ctrl+shift+v,enter"); apps not
+        listed get DEFAULT_PASTE_CHORD. Seeded defaults until first written."""
+        data = self._store.read(PASTE_OVERRIDES_KEY)
+        if data is None:
+            return dict(DEFAULT_PASTE_OVERRIDES)
+        overrides = data.get("map")
+        return dict(overrides) if isinstance(overrides, dict) else {}
+
+    def set_paste_overrides(self, overrides: dict[str, str]) -> None:
+        """Persist the per-app paste chord map."""
+        self._store.write(PASTE_OVERRIDES_KEY, {"map": dict(overrides)})
+
+    def paste_chord_for(self, exe: str | None) -> str:
+        """The paste chord (or comma-separated sequence) to synthesize for a
+        target exe basename -- DEFAULT_PASTE_CHORD when the exe is unknown
+        (None) or not overridden."""
+        if exe is None:
+            return DEFAULT_PASTE_CHORD
+        return self.get_paste_overrides().get(exe, DEFAULT_PASTE_CHORD)

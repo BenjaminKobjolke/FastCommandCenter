@@ -5,6 +5,7 @@ from command_palette import KeymapState, MemoryStore, PaletteConfig
 from config.settings_store import (
     DEFAULT_BINDINGS,
     DEFAULT_CHORD,
+    DEFAULT_PASTE_OVERRIDES,
     SettingsStore,
     _to_qt_chord,
     normalize_chord,
@@ -120,6 +121,37 @@ def test_settings_store_tool_dirs_round_trip():
     store = SettingsStore(MemoryStore())
     store.set_tool_dirs(["D:/GIT/BenjaminKobjolke/FastTools/FastKeyboardMouse"])
     assert store.get_tool_dirs() == ["D:/GIT/BenjaminKobjolke/FastTools/FastKeyboardMouse"]
+
+
+def test_paste_overrides_default_to_the_seeded_wezterm_entry():
+    store = SettingsStore(MemoryStore())
+    assert store.get_paste_overrides() == DEFAULT_PASTE_OVERRIDES
+    assert store.get_paste_overrides() == {"wezterm-gui.exe": "ctrl+shift+v"}
+
+
+def test_paste_overrides_round_trip():
+    store = SettingsStore(MemoryStore())
+    store.set_paste_overrides({"notepad.exe": "ctrl+shift+v"})
+    assert store.get_paste_overrides() == {"notepad.exe": "ctrl+shift+v"}
+
+
+def test_paste_overrides_emptied_map_sticks_and_does_not_reseed():
+    store = SettingsStore(MemoryStore())
+    store.set_paste_overrides({})
+    assert store.get_paste_overrides() == {}
+
+
+def test_paste_overrides_default_is_a_copy_mutation_does_not_leak():
+    store = SettingsStore(MemoryStore())
+    store.get_paste_overrides()["foo.exe"] = "ctrl+v"
+    assert "foo.exe" not in store.get_paste_overrides()
+
+
+def test_paste_chord_for_overridden_unlisted_and_unknown_exe():
+    store = SettingsStore(MemoryStore())
+    assert store.paste_chord_for("wezterm-gui.exe") == "ctrl+shift+v"
+    assert store.paste_chord_for("notepad.exe") == "ctrl+v"
+    assert store.paste_chord_for(None) == "ctrl+v"
 
 
 def test_migrate_legacy_chord_noop_when_open_palette_already_customized():

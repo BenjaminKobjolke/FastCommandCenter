@@ -36,7 +36,7 @@ from command_palette.appearance import (
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QColorDialog, QFileDialog
 
-from config.settings_store import SettingsStore
+from config.settings_store import DEFAULT_PASTE_CHORD, SettingsStore, _to_qt_chord
 
 if TYPE_CHECKING:
     from command_palette.dialog import FilterListDialog
@@ -46,6 +46,16 @@ _PERCENT_STEP = 10
 _RESET_TO_DEFAULT = "__reset__"
 _CHOOSE_CUSTOM = "__custom__"
 _ADD_TOOL_FOLDER = "__add_tool_folder__"
+# ponytail: fixed set -- both paste conventions (Ctrl+V, terminal
+# Ctrl+Shift+V), each optionally followed by Enter. Add rows here if another
+# combination ever matters; hand-editing state.json's paste_overrides already
+# supports arbitrary comma-separated chord sequences.
+_PASTE_SEQUENCES = [
+    DEFAULT_PASTE_CHORD,
+    "ctrl+shift+v",
+    f"{DEFAULT_PASTE_CHORD},enter",
+    "ctrl+shift+v,enter",
+]
 
 ApplyAppearance = Callable[[PaletteConfig], None]
 _NO_RUN: Callable[[], None] = lambda: None  # noqa: E731 — navigable commands never run() directly
@@ -63,6 +73,8 @@ class PaletteWiring:
     settings_store: SettingsStore
     apply_appearance: ApplyAppearance
     refresh_tool_commands: Callable[[], None]
+    paste_target_exe: Callable[[], str | None]
+    open_paste_behaviour: Callable[[], None]
 
 
 def build_commands(wiring: PaletteWiring) -> list[Command]:
@@ -141,6 +153,18 @@ def build_commands(wiring: PaletteWiring) -> list[Command]:
             ),
         ),
         Command(
+            command_id="paste_behaviour",
+            title="Paste: behaviour for current application",
+            # A hotkey bound straight to this command fires with no palette
+            # open yet -- run opens the palette navigated here, same as the
+            # settings command (see module docstring).
+            run=wiring.open_paste_behaviour,
+            submenu=lambda: _paste_behaviour_entries(wiring.paste_target_exe(), settings_store),
+            on_submenu_choice=lambda chord: _apply_paste_behaviour_choice(
+                wiring.paste_target_exe(), chord, settings_store
+            ),
+        ),
+        Command(
             command_id="manage_tool_folders",
             title="Tools: manage folders",
             run=_NO_RUN,
@@ -210,6 +234,38 @@ def _pick_native_color(initial: str | None, *, title: str) -> str | None:
     inside the palette — a color wheel can't be a filter-list)."""
     picked = QColorDialog.getColor(QColor(initial or "#ffffff"), None, title)
     return picked.name() if picked.isValid() else None
+
+
+def _sequence_title(sequence: str) -> str:
+    return ", then ".join(_to_qt_chord(chord) for chord in sequence.split(","))
+
+
+def _paste_behaviour_entries(exe: str | None, settings_store: SettingsStore) -> list[ListEntry]:
+    if exe is None:
+        return [ListEntry(title="No target window", payload=None)]
+    current = settings_store.paste_chord_for(exe)
+    return [
+        ListEntry(
+            title=f"{exe}: {_sequence_title(sequence)}"
+            + (" (default)" if sequence == DEFAULT_PASTE_CHORD else ""),
+            payload=sequence,
+            selected=sequence == current,
+        )
+        for sequence in _PASTE_SEQUENCES
+    ]
+
+
+def _apply_paste_behaviour_choice(
+    exe: str | None, chord: str | None, settings_store: SettingsStore
+) -> None:
+    if exe is None or chord is None:
+        return
+    overrides = settings_store.get_paste_overrides()
+    if chord == DEFAULT_PASTE_CHORD:
+        overrides.pop(exe, None)
+    else:
+        overrides[exe] = chord
+    settings_store.set_paste_overrides(overrides)
 
 
 def _tool_folder_entries(settings_store: SettingsStore) -> list[ListEntry]:

@@ -36,7 +36,7 @@ python_version = "3.11"
 files = ["core", "config", "gui", "palette", "fastcommandcenter.py"]
 
 [[tool.mypy.overrides]]
-module = "winhotkeys"
+module = ["winhotkeys", "winhotkeys.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

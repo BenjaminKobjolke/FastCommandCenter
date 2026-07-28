@@ -17,6 +17,9 @@ def _build_commands(
     mount_shortcuts=None,
     settings_store=None,
     refresh_tool_commands=lambda: None,
+    paste_target_exe=lambda: None,
+    open_paste_behaviour=lambda: None,
+    apply_appearance=lambda _config: None,
 ):
     return build_commands(
         PaletteWiring(
@@ -25,8 +28,10 @@ def _build_commands(
             mount_shortcuts=mount_shortcuts or (lambda _dialog: None),
             quit_app=lambda: None,
             settings_store=settings_store or SettingsStore(MemoryStore()),
-            apply_appearance=lambda _config: None,
+            apply_appearance=apply_appearance,
             refresh_tool_commands=refresh_tool_commands,
+            paste_target_exe=paste_target_exe,
+            open_paste_behaviour=open_paste_behaviour,
         )
     )
 
@@ -109,17 +114,7 @@ def test_font_size_submenu_rows_match_font_sizes():
 def test_font_size_submenu_preselects_the_current_value():
     settings_store = SettingsStore(MemoryStore())
     settings_store.set_appearance(replace(settings_store.get_appearance(), font_pt=18))
-    commands = build_commands(
-        PaletteWiring(
-            open_palette=lambda: None,
-            open_settings=lambda: None,
-            mount_shortcuts=lambda _dialog: None,
-            quit_app=lambda: None,
-            settings_store=settings_store,
-            apply_appearance=lambda _config: None,
-            refresh_tool_commands=lambda: None,
-        )
-    )
+    commands = _build_commands(settings_store=settings_store)
     font_cmd = next(c for c in commands if c.command_id == "appearance_font")
     rows = font_cmd.submenu()
     assert [row.payload for row in rows if row.selected] == [18]
@@ -136,17 +131,7 @@ def test_width_submenu_rows_match_percent_range():
 def test_width_submenu_preselects_the_current_value():
     settings_store = SettingsStore(MemoryStore())
     settings_store.set_appearance(replace(settings_store.get_appearance(), width_pct=60))
-    commands = build_commands(
-        PaletteWiring(
-            open_palette=lambda: None,
-            open_settings=lambda: None,
-            mount_shortcuts=lambda _dialog: None,
-            quit_app=lambda: None,
-            settings_store=settings_store,
-            apply_appearance=lambda _config: None,
-            refresh_tool_commands=lambda: None,
-        )
-    )
+    commands = _build_commands(settings_store=settings_store)
     width_cmd = next(c for c in commands if c.command_id == "appearance_width")
     rows = width_cmd.submenu()
     assert [row.payload for row in rows if row.selected] == [60]
@@ -154,18 +139,7 @@ def test_width_submenu_preselects_the_current_value():
 
 def test_choosing_a_font_size_applies_it_via_settings_store():
     applied = []
-    settings_store = SettingsStore(MemoryStore())
-    commands = build_commands(
-        PaletteWiring(
-            open_palette=lambda: None,
-            open_settings=lambda: None,
-            mount_shortcuts=lambda _dialog: None,
-            quit_app=lambda: None,
-            settings_store=settings_store,
-            apply_appearance=lambda config: applied.append(config),
-            refresh_tool_commands=lambda: None,
-        )
-    )
+    commands = _build_commands(apply_appearance=lambda config: applied.append(config))
     font_cmd = next(c for c in commands if c.command_id == "appearance_font")
     font_cmd.on_submenu_choice(18)
     assert len(applied) == 1
@@ -174,18 +148,7 @@ def test_choosing_a_font_size_applies_it_via_settings_store():
 
 def test_color_submenu_reset_choice_applies_none():
     applied = []
-    settings_store = SettingsStore(MemoryStore())
-    commands = build_commands(
-        PaletteWiring(
-            open_palette=lambda: None,
-            open_settings=lambda: None,
-            mount_shortcuts=lambda _dialog: None,
-            quit_app=lambda: None,
-            settings_store=settings_store,
-            apply_appearance=lambda config: applied.append(config),
-            refresh_tool_commands=lambda: None,
-        )
-    )
+    commands = _build_commands(apply_appearance=lambda config: applied.append(config))
     active_fg_cmd = next(c for c in commands if c.command_id == "appearance_active_fg")
     rows = active_fg_cmd.submenu()
     reset_row = next(r for r in rows if r.title == "Reset to theme default")
@@ -251,6 +214,119 @@ def test_choosing_add_folder_with_no_pick_leaves_folders_unchanged(monkeypatch):
 
     assert settings_store.get_tool_dirs() == []
     assert refreshed == []
+
+
+def test_paste_behaviour_submenu_shows_target_exe_with_current_chord_selected():
+    settings_store = SettingsStore(MemoryStore())
+    commands = _build_commands(
+        settings_store=settings_store, paste_target_exe=lambda: "notepad.exe"
+    )
+    cmd = next(c for c in commands if c.command_id == "paste_behaviour")
+
+    rows = cmd.submenu()
+
+    assert [r.title for r in rows] == [
+        "notepad.exe: Ctrl+V (default)",
+        "notepad.exe: Ctrl+Shift+V",
+        "notepad.exe: Ctrl+V, then Enter",
+        "notepad.exe: Ctrl+Shift+V, then Enter",
+    ]
+    assert [r.payload for r in rows if r.selected] == ["ctrl+v"]
+
+
+def test_paste_behaviour_submenu_preselects_a_stored_override():
+    settings_store = SettingsStore(MemoryStore())
+    settings_store.set_paste_overrides({"wezterm-gui.exe": "ctrl+shift+v"})
+    commands = _build_commands(
+        settings_store=settings_store, paste_target_exe=lambda: "wezterm-gui.exe"
+    )
+    cmd = next(c for c in commands if c.command_id == "paste_behaviour")
+
+    rows = cmd.submenu()
+
+    assert [r.payload for r in rows if r.selected] == ["ctrl+shift+v"]
+
+
+def test_paste_behaviour_submenu_without_target_window_shows_placeholder_row():
+    commands = _build_commands(paste_target_exe=lambda: None)
+    cmd = next(c for c in commands if c.command_id == "paste_behaviour")
+
+    rows = cmd.submenu()
+
+    assert [r.title for r in rows] == ["No target window"]
+    assert rows[0].payload is None
+
+
+def test_paste_behaviour_choice_stores_an_override_for_the_target_exe():
+    settings_store = SettingsStore(MemoryStore())
+    commands = _build_commands(
+        settings_store=settings_store, paste_target_exe=lambda: "notepad.exe"
+    )
+    cmd = next(c for c in commands if c.command_id == "paste_behaviour")
+
+    cmd.on_submenu_choice("ctrl+shift+v")
+
+    assert settings_store.get_paste_overrides()["notepad.exe"] == "ctrl+shift+v"
+
+
+def test_paste_behaviour_choosing_default_removes_the_override():
+    settings_store = SettingsStore(MemoryStore())
+    settings_store.set_paste_overrides({"wezterm-gui.exe": "ctrl+shift+v"})
+    commands = _build_commands(
+        settings_store=settings_store, paste_target_exe=lambda: "wezterm-gui.exe"
+    )
+    cmd = next(c for c in commands if c.command_id == "paste_behaviour")
+
+    cmd.on_submenu_choice("ctrl+v")
+
+    assert "wezterm-gui.exe" not in settings_store.get_paste_overrides()
+
+
+def test_paste_behaviour_submenu_preselects_a_stored_sequence():
+    settings_store = SettingsStore(MemoryStore())
+    settings_store.set_paste_overrides({"wezterm-gui.exe": "ctrl+shift+v,enter"})
+    commands = _build_commands(
+        settings_store=settings_store, paste_target_exe=lambda: "wezterm-gui.exe"
+    )
+    cmd = next(c for c in commands if c.command_id == "paste_behaviour")
+
+    rows = cmd.submenu()
+
+    assert [r.payload for r in rows if r.selected] == ["ctrl+shift+v,enter"]
+
+
+def test_paste_behaviour_choice_stores_a_sequence():
+    settings_store = SettingsStore(MemoryStore())
+    commands = _build_commands(
+        settings_store=settings_store, paste_target_exe=lambda: "notepad.exe"
+    )
+    cmd = next(c for c in commands if c.command_id == "paste_behaviour")
+
+    cmd.on_submenu_choice("ctrl+v,enter")
+
+    assert settings_store.get_paste_overrides()["notepad.exe"] == "ctrl+v,enter"
+
+
+def test_paste_behaviour_choice_without_target_window_changes_nothing():
+    settings_store = SettingsStore(MemoryStore())
+    commands = _build_commands(settings_store=settings_store, paste_target_exe=lambda: None)
+    cmd = next(c for c in commands if c.command_id == "paste_behaviour")
+
+    cmd.on_submenu_choice(None)
+
+    assert settings_store.get_paste_overrides() == {"wezterm-gui.exe": "ctrl+shift+v"}
+
+
+def test_paste_behaviour_run_opens_the_palette_navigated_to_it():
+    # A hotkey bound straight to "paste_behaviour" fires with no palette open
+    # yet -- `run` must open the palette itself, navigated to the chord list
+    # (same both-entry-paths rule as the settings command).
+    ran: list[str] = []
+    commands = _build_commands(open_paste_behaviour=lambda: ran.append("paste_behaviour"))
+
+    next(c for c in commands if c.command_id == "paste_behaviour").run()
+
+    assert ran == ["paste_behaviour"]
 
 
 def test_choosing_add_folder_with_a_pick_appends_it(monkeypatch):
